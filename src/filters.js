@@ -21,6 +21,73 @@ function senderDomain(address) {
   return address.split('@')[1] || '';
 }
 
+// ---------- Senders: the From criterion as a set of tags ----------
+// A sender is "a@x.com" (one address) or "@x.com" (everyone at x.com).
+// These are plain function declarations because the popup page reuses their source (see sharedSource in Code.js).
+
+function isDomainSender(s) {
+  return s.charAt(0) === '@';
+}
+
+function senderLabel(s) {
+  return isDomainSender(s) ? 'anyone at ' + s.slice(1) : s;
+}
+
+/** "Alex <a@x.com>", "*@x.com", "@x.com" or "x.com" -> "a@x.com" / "@x.com"; null if it isn't an address or domain. */
+function normalizeSender(raw) {
+  let s = parseAddress(raw).replace(/^\*@/, '@');
+  // Gmail search syntax ("-x" means NOT x, quotes, groups) can't be a tag: treating it as an address would flip its meaning.
+  if (/^-|["(){}]/.test(s)) return null;
+  if (s.indexOf('@') === -1 && /^[^\s@]+\.[a-z]{2,}$/i.test(s)) s = '@' + s; // a bare domain means everyone there
+  const ok = isDomainSender(s) ? /^@[^\s@]+\.[^\s@]{2,}$/.test(s) : /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
+  return ok ? s : null;
+}
+
+/**
+ * Turns typed or pasted text into senders, without changing `current`.
+ * Returns {added, bad, messages}: bad holds the raw entries that need fixing.
+ */
+function parseSenders(text, current) {
+  // Split on commas, semicolons, new lines, | and OR; on spaces too, except inside "Name <address>".
+  const tokens = String(text || '')
+    .split(/[,;\n|]+|\bOR\b/)
+    .reduce((out, chunk) => out.concat(chunk.indexOf('<') !== -1 ? [chunk] : chunk.split(/\s+/)), [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const added = [];
+  const bad = [];
+  const skipped = [];
+  tokens.forEach((raw) => {
+    const s = normalizeSender(raw);
+    if (!s) return bad.push(raw);
+    const all = current.concat(added);
+    if (all.indexOf(s) !== -1) return skipped.push(senderLabel(s) + ' is already in the list');
+    if (!isDomainSender(s) && all.indexOf('@' + senderDomain(s)) !== -1) {
+      return skipped.push(s + ' is covered by ' + senderLabel('@' + senderDomain(s)));
+    }
+    added.push(s);
+  });
+  const messages = bad
+    .map((b) => '“' + b + '” isn’t an email address or domain.')
+    .concat(skipped.length ? ['Skipped: ' + skipped.join('; ') + '.'] : []);
+  return { added: added, bad: bad, messages: messages };
+}
+
+/** A filter's From text as senders, or null when it uses search syntax tags can't show (then it's edited as text). */
+function sendersFromCriteria(from) {
+  if (!from) return [];
+  const parts = splitAlternatives(from);
+  const senders = parts.map(normalizeSender);
+  return senders.every(Boolean) ? senders.filter((s, i) => senders.indexOf(s) === i) : null;
+}
+
+/** Senders back to Gmail's From text. An unchanged set keeps the original text, so the filter isn't rewritten. */
+function sendersToFrom(senders, originalFrom) {
+  const before = sendersFromCriteria(originalFrom || '');
+  const same = before && before.length === senders.length && senders.every((s) => before.indexOf(s) !== -1);
+  return same ? originalFrom || '' : senders.join(' | ');
+}
+
 // Criteria the forms can edit. Anything else on a filter (size, attachments, categories, forwarding,
 // extra labels) is kept as-is, so editing never drops part of a filter the form doesn't show.
 const EDITABLE_CRITERIA = ['from', 'to', 'subject', 'query', 'negatedQuery'];

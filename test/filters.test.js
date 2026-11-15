@@ -78,3 +78,25 @@ test('summarizeFilter shortens long real-world filters', () => {
   });
   assert.deepStrictEqual([...ctx.splitAlternatives('a@x.com OR b@y.com')], ['a@x.com', 'b@y.com']);
 });
+
+test('parseSenders reads messy pastes', () => {
+  const r = ctx.parseSenders('wolfram.com, jane@wolfram.com, bad@, Alex <Alex@Acme.io>\n*@x.org | y@z.com OR @q.net', ['@wolfram.com']);
+  assert.deepStrictEqual([...r.added], ['alex@acme.io', '@x.org', 'y@z.com', '@q.net']);
+  assert.deepStrictEqual([...r.bad], ['bad@']);
+  assert.match(r.messages[0], /“bad@” isn’t an email address or domain/);
+  assert.match(r.messages[1], /anyone at wolfram.com is already in the list; jane@wolfram.com is covered by anyone at wolfram.com/);
+});
+
+test('sendersFromCriteria and sendersToFrom round-trip without rewriting', () => {
+  const original = '*@wolframcloud.com | *@wolfram.com';
+  const senders = ctx.sendersFromCriteria(original);
+  assert.deepStrictEqual([...senders], ['@wolframcloud.com', '@wolfram.com']);
+  // Same set (any order) keeps Gmail's original text.
+  assert.strictEqual(ctx.sendersToFrom(['@wolfram.com', '@wolframcloud.com'], original), original);
+  // A change writes the new set.
+  assert.strictEqual(ctx.sendersToFrom(['@wolfram.com', 'a@b.io'], original), '@wolfram.com | a@b.io');
+  assert.strictEqual(ctx.sendersToFrom([], original), '');
+  // Search syntax the tags can't represent is left for the text field.
+  assert.strictEqual(ctx.sendersFromCriteria('-noreply@x.com'), null);
+  assert.deepStrictEqual([...ctx.sendersFromCriteria('')], []);
+});

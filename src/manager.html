@@ -5,93 +5,126 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=block">
 <style>
-  /* Gmail-native: same canvas, pill search, rounded white groups, blue accent, dark snackbar */
+  /* Gmail-native: same canvas, pill search, rounded white groups, blue accent, tags for senders */
   :root {
     --bg: #f6f8fc; --surface: #ffffff; --fg: #1f1f1f; --muted: #444746; --faint: #747775;
-    --line: #e1e3e1; --chip: #e9eef6; --hover: #f2f6fc; --accent: #0b57d0; --on-accent: #ffffff;
-    --danger: #b3261e; --danger-soft: #fce8e6; --toast: #303030; --on-toast: #f2f2f2;
+    --line: #e1e3e1; --field: #747775; --chip: #e9eef6; --person: #d3e3fd; --on-person: #041e49; --person-icon: #0842a0;
+    --hover: #f2f6fc; --accent: #0b57d0; --on-accent: #ffffff; --tonal: #c2e7ff; --on-tonal: #001d35;
+    --danger: #b3261e; --danger-soft: #fce8e6; --on-danger-soft: #8c1d18; --info: #f0f4f9;
+    --toast: #303030; --on-toast: #f2f2f2;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111111; --surface: #1e1f20; --fg: #e3e3e3; --muted: #c4c7c5; --faint: #8e918f;
-      --line: #3c4043; --chip: #2d2f31; --hover: #282a2c; --accent: #a8c7fa; --on-accent: #062e6f;
-      --danger: #f2b8b5; --danger-soft: #3c1f1e; --toast: #e3e3e3; --on-toast: #1f1f1f; color-scheme: dark;
+      --line: #3c4043; --field: #8e918f; --chip: #2d2f31; --person: #0842a0; --on-person: #d3e3fd; --person-icon: #a8c7fa;
+      --hover: #282a2c; --accent: #a8c7fa; --on-accent: #062e6f; --tonal: #004a77; --on-tonal: #c2e7ff;
+      --danger: #f2b8b5; --danger-soft: #3c1f1e; --on-danger-soft: #f9dedc; --info: #282a2c;
+      --toast: #e3e3e3; --on-toast: #1f1f1f; color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px Roboto, Arial, sans-serif; }
-  button, input { font: inherit; color: inherit; }
+  button, input, a { font: inherit; color: inherit; }
   button { cursor: pointer; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .ms { font-family: 'Material Symbols Outlined'; font-size: 20px; line-height: 1; vertical-align: middle; user-select: none; }
+  [hidden] { display: none !important; }
+  .ms { font-family: 'Material Symbols Outlined'; font-size: 20px; line-height: 1; vertical-align: middle; user-select: none; font-weight: 400; font-style: normal; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .icon-btn { border: 0; background: none; width: 40px; height: 40px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--muted); text-decoration: none; }
+  .icon-btn:hover { background: var(--hover); }
+  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 20px; height: 40px; padding: 0 16px; font-weight: 500; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); padding: 0 24px; }
+  .btn.text { border-color: transparent; background: none; }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+
+  /* list view */
   .bar { position: sticky; top: 0; z-index: 2; background: var(--bg); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px; }
   .bar h1 { font: 400 22px/28px Roboto, Arial, sans-serif; margin: 0; }
   .count { color: var(--muted); font-size: 13px; }
-  .search { flex: 1; min-width: 220px; max-width: 720px; display: flex; align-items: center; gap: 12px; background: var(--chip); border-radius: 24px; padding: 0 16px; height: 48px; }
+  .search { flex: 1 1 260px; max-width: 720px; display: flex; align-items: center; gap: 12px; background: var(--chip); border-radius: 24px; padding: 0 16px; height: 48px; }
   .search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; min-width: 0; }
-  .icon-btn { border: 0; background: none; width: 40px; height: 40px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--muted); }
-  .icon-btn:hover { background: var(--hover); }
   main { padding: 0 24px 96px; display: flex; flex-direction: column; gap: 16px; max-width: 1100px; }
   .group { background: var(--surface); border-radius: 16px; overflow: hidden; }
-  .ghead { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; font-weight: 500; }
+  .ghead { display: flex; align-items: center; gap: 12px; padding: 14px 16px 8px; font-weight: 500; }
   .ghead .ms { color: var(--muted); }
   .ghead .n { color: var(--faint); font-weight: 400; font-size: 13px; }
   .row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); }
   .row:hover { background: var(--hover); }
-  .row:hover .tools { opacity: 1; }
   .crit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .k { color: var(--muted); font-size: 12px; min-width: 76px; }
-  .chip { background: var(--chip); border-radius: 8px; padding: 2px 8px; font-size: 13px; max-width: 100%; overflow-wrap: anywhere; }
+  .val { font-size: 13px; overflow-wrap: anywhere; }
   .more { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 4px; }
-  .tools { display: flex; gap: 2px; opacity: .65; }
-  @media (hover: none) { .tools { opacity: 1; } }
+  .tools { display: flex; gap: 2px; }
   .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--danger-soft); border-radius: 8px; padding: 8px 12px; color: var(--danger); }
-  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 20px; height: 36px; padding: 0 16px; font-weight: 500; color: var(--accent); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
-  form.edit { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; padding: 4px 0; }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 12px; color: var(--muted); }
-  .field input { height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: var(--surface); }
-  .checks { display: flex; flex-wrap: wrap; gap: 4px 16px; grid-column: 1 / -1; }
-  .checks label { display: flex; align-items: center; gap: 6px; }
-  .checks input { accent-color: var(--accent); width: 18px; height: 18px; }
-  .note { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
-  .err { grid-column: 1 / -1; color: var(--danger); font-size: 13px; }
-  .actions { grid-column: 1 / -1; display: flex; gap: 8px; }
   .empty { background: var(--surface); border-radius: 16px; padding: 40px 24px; text-align: center; color: var(--muted); }
   .skel { height: 64px; border-radius: 16px; background: var(--surface); opacity: .6; }
-  .toast { position: fixed; left: 24px; bottom: 24px; background: var(--toast); color: var(--on-toast); border-radius: 4px; padding: 14px 16px; max-width: calc(100% - 48px); box-shadow: 0 2px 6px rgba(0,0,0,.3); }
-  [hidden] { display: none !important; }
-  @media (max-width: 600px) { .bar, main { padding-left: 16px; padding-right: 16px; } .k { min-width: 0; width: 100%; } }
+
+  /* tags */
+  .tag { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border-radius: 6px; background: var(--chip); font-size: 13px; max-width: 100%; }
+  .tag .ms { font-size: 16px; color: var(--muted); }
+  .tag.person { background: var(--person); color: var(--on-person); }
+  .tag.person .ms { color: var(--person-icon); }
+  .tag .x { width: 24px; height: 24px; margin-right: -6px; border: 0; border-radius: 12px; background: none; display: grid; place-items: center; color: inherit; }
+  .tag .x .ms { color: inherit; }
+  .tag.bad { border: 1px solid var(--danger); background: var(--danger-soft); color: var(--on-danger-soft); cursor: pointer; }
+  .tag.bad .ms { color: var(--on-danger-soft); }
+  .tagbox { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 8px; border: 1px solid var(--field); border-radius: 8px; background: var(--surface); cursor: text; }
+  .tagbox:focus-within { border: 2px solid var(--accent); padding: 7px; }
+  .tagbox input { flex: 1 1 140px; min-width: 0; height: 28px; border: 0; outline: none; background: none; }
+  .hints { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 16px; color: var(--muted); }
+  .hints li { display: flex; align-items: center; gap: 6px; }
+  .hints .ms { font-size: 16px; }
+  .hints b { font-weight: 500; color: var(--fg); }
+  .msg { display: flex; gap: 6px; font-size: 12px; line-height: 16px; }
+  .msg.err { color: var(--danger); }
+  .msg.info { color: var(--muted); background: var(--info); border-radius: 8px; padding: 8px 10px; }
+  .msg .ms { font-size: 16px; }
+
+  /* edit view */
+  .edit { max-width: 900px; margin: 0 auto; padding: 16px 28px 0; display: flex; flex-direction: column; gap: 24px; }
+  .back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-left: -8px; padding: 6px 8px; border-radius: 16px; color: var(--accent); font-size: 13px; font-weight: 500; text-decoration: none; border: 0; background: none; }
+  .edit h1 { margin: 0; font: 400 22px/28px Roboto, Arial, sans-serif; }
+  .sub { font-size: 13px; color: var(--muted); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .col h2 { margin: 0; font-size: 14px; font-weight: 500; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input[type=text] { height: 40px; border: 1px solid var(--field); border-radius: 8px; padding: 0 12px; background: var(--surface); }
+  .checks { display: flex; flex-direction: column; gap: 2px; }
+  .checks label { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+  .checks input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
+  .kept { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; background: var(--info); font-size: 13px; color: var(--muted); }
+  .kept b { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+  .foot { position: sticky; bottom: 0; background: var(--bg); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 0 18px; border-top: 1px solid var(--line); }
+  .foot .note { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); }
+
+  .toast { position: fixed; left: 24px; bottom: 24px; background: var(--toast); color: var(--on-toast); border-radius: 4px; padding: 14px 16px; max-width: calc(100% - 48px); box-shadow: 0 2px 6px rgba(0,0,0,.3); z-index: 5; }
+  @media (max-width: 600px) { .bar, main { padding-left: 16px; padding-right: 16px; } .edit { padding: 12px 16px 0; } .k { min-width: 0; width: 100%; } }
 </style>
 </head>
 <body>
-  <header class="bar">
-    <h1>Your filters</h1>
-    <span class="count" id="count"></span>
-    <label class="search"><span class="ms" aria-hidden="true">search</span><input id="q" type="search" placeholder="Search senders, words or labels" aria-label="Search filters"></label>
-    <button class="icon-btn" id="refresh" aria-label="Refresh" title="Refresh"><span class="ms">refresh</span></button>
-  </header>
-  <main id="list" aria-live="polite">
-    <div class="skel"></div><div class="skel"></div><div class="skel"></div>
-  </main>
+  <div id="app" aria-live="polite"><main><div class="skel"></div><div class="skel"></div><div class="skel"></div></main></div>
   <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
-  const FIELDS = [['from', 'From'], ['to', 'To'], ['subject', 'Subject contains'], ['query', 'Has the words'], ['negatedQuery', "Doesn't have"]];
+  // Sender parsing, shared with the side panel (served from filters.js so both follow the same rules).
+  <?!= shared ?>
+
   const MAX = 1000;
   let data = null;
-  const ui = { open: {}, editing: null, deleting: null, error: '' };
+  const ui = { view: 'list', open: {}, deleting: null, query: '', edit: null, start: null };
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const $ = (id) => document.getElementById(id);
+  const tagText = (s) => (isDomainSender(s) ? s.slice(1) : s);
+  const tagIcon = (s) => (isDomainSender(s) ? 'domain' : 'person');
 
-  function load() {
+  function load(then) {
     google.script.run
-      .withSuccessHandler((d) => { data = d; render(); })
-      .withFailureHandler((e) => { $('list').innerHTML = '<div class="empty">Couldn\'t load your filters: ' + esc(e.message) + '</div>'; })
+      .withSuccessHandler((d) => { data = d; (then || render)(); })
+      .withFailureHandler((e) => { $('app').innerHTML = '<main><div class="empty">Couldn’t load your filters: ' + esc(e.message) + '</div></main>'; })
       .managerData();
   }
 
@@ -99,96 +132,224 @@
   function toast(text) {
     const t = $('toast');
     t.textContent = text; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 4000);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 4500);
   }
+
+  function render() { (ui.view === 'edit' ? renderEdit : renderList)(); }
+
+  // ---------- list view ----------
 
   function matches(f, q) {
     if (!q) return true;
-    const hay = [f.summary.title, f.summary.subtitle].concat(...f.criteria.map((c) => c.values), f.actions).join(' ').toLowerCase();
+    const hay = [f.summary.title, f.summary.subtitle].concat(f.senders || [], ...f.criteria.map((c) => c.values)).join(' ').toLowerCase();
     return q.split(/\s+/).every((w) => hay.includes(w));
   }
 
-  function render() {
-    const q = $('q').value.trim().toLowerCase();
+  function renderList() {
+    const q = ui.query.trim().toLowerCase();
     const shown = data.filters.filter((f) => matches(f, q));
-    $('count').textContent = data.filters.length + ' of ' + MAX.toLocaleString();
-
-    if (!data.filters.length) { $('list').innerHTML = '<div class="empty">No filters yet. Open an email in Gmail and create one from the side panel.</div>'; return; }
-    if (!shown.length) { $('list').innerHTML = '<div class="empty">No filters match “' + esc(q) + '”.</div>'; return; }
-
     const groups = new Map();
     shown.forEach((f) => { const k = f.summary.title; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); });
-    $('list').innerHTML = [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((title) => {
+
+    let body;
+    if (!data.filters.length) body = '<div class="empty">No filters yet. Create your first one.</div>';
+    else if (!shown.length) body = '<div class="empty">No filters match “' + esc(q) + '”.</div>';
+    else body = [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((title) => {
       const fs = groups.get(title);
       return '<section class="group"><div class="ghead"><span class="ms" aria-hidden="true">' + esc(fs[0].icon) + '</span><span>' + esc(title) +
         '</span><span class="n">' + fs.length + (fs.length > 1 ? ' filters' : ' filter') + '</span></div>' + fs.map(rowHTML).join('') + '</section>';
     }).join('');
+
+    $('app').innerHTML =
+      '<header class="bar"><h1>Your filters</h1><span class="count">' + data.filters.length + ' of ' + MAX.toLocaleString() + '</span>' +
+      '<label class="search"><span class="ms" aria-hidden="true">search</span><input id="q" type="search" placeholder="Search senders, words or labels" aria-label="Search filters" value="' + esc(ui.query) + '"></label>' +
+      '<button class="icon-btn" data-act="refresh" aria-label="Refresh" title="Refresh"><span class="ms">refresh</span></button>' +
+      '<button class="btn primary" data-act="new"><span class="ms" aria-hidden="true">add</span>New filter</button></header>' +
+      '<main>' + body + '</main>';
   }
 
   function rowHTML(f) {
-    if (ui.editing === f.id) return '<div class="row">' + formHTML(f) + '</div>';
-    const crit = f.criteria.map((c) => {
+    const lines = [];
+    if (f.senders && f.senders.length) {
       const limit = ui.open[f.id] ? Infinity : 6;
-      const chips = c.values.slice(0, limit).map((v) => '<span class="chip">' + esc(v) + '</span>').join('');
-      const extra = c.values.length > limit ? '<button class="more" data-act="more" data-id="' + f.id + '">+' + (c.values.length - limit) + ' more</button>' : '';
-      return '<div class="line"><span class="k">' + esc(c.name) + '</span>' + (chips || '<span class="chip">Yes</span>') + extra + '</div>';
-    }).join('');
+      const tags = f.senders.slice(0, limit).map((s) => '<span class="tag' + (isDomainSender(s) ? '' : ' person') + '"><span class="ms" aria-hidden="true">' + tagIcon(s) + '</span>' + esc(tagText(s)) + '</span>').join('');
+      const extra = f.senders.length > limit ? '<button class="more" data-act="more" data-id="' + f.id + '">+' + (f.senders.length - limit) + ' more</button>' : '';
+      lines.push('<div class="line"><span class="k">From</span>' + tags + extra + '</div>');
+    }
+    f.criteria.forEach((c) => lines.push('<div class="line"><span class="k">' + esc(c.name) + '</span><span class="val">' + (c.values.map(esc).join(', ') || 'Yes') + '</span></div>'));
     const tail = ui.deleting === f.id
-      ? '<div class="confirm">Delete this filter? This can\'t be undone. <button class="btn danger" data-act="del-yes" data-id="' + f.id + '">Delete</button><button class="btn" data-act="del-no">Cancel</button></div>'
+      ? '<div class="confirm">Delete this filter? This can’t be undone. <button class="btn danger" data-act="del-yes" data-id="' + f.id + '">Delete</button><button class="btn" data-act="del-no">Cancel</button></div>'
       : '<div class="tools"><button class="icon-btn" data-act="edit" data-id="' + f.id + '" aria-label="Edit filter" title="Edit"><span class="ms">edit</span></button>' +
         '<button class="icon-btn" data-act="del" data-id="' + f.id + '" aria-label="Delete filter" title="Delete"><span class="ms">delete</span></button></div>';
-    return '<div class="row"><div class="crit">' + crit + '</div>' + tail + '</div>';
+    return '<div class="row"><div class="crit">' + (lines.join('') || '<span class="val">Any email</span>') + '</div>' + tail + '</div>';
   }
 
-  function formHTML(f) {
-    const v = f.values;
-    const fields = FIELDS.filter(([k]) => k === 'from' || k === 'subject' || v[k]);
-    return '<form class="edit" data-id="' + f.id + '" data-fields="' + fields.map(([k]) => k).join(',') + '">' +
-      fields.map(([k, t]) => '<div class="field"><label for="e-' + k + '">' + t + '</label><input id="e-' + k + '" name="' + k + '" value="' + esc(v[k]) + '"></div>').join('') +
-      '<div class="field"><label for="e-label">Apply label</label><input id="e-label" name="label" list="labels" value="' + esc(v.label) + '" placeholder="No label"></div>' +
-      '<datalist id="labels">' + data.labels.map((l) => '<option value="' + esc(l) + '">').join('') + '</datalist>' +
-      '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + (v.actions.includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>' +
-      '<p class="note">Saving replaces the filter with the new version. Parts this form doesn\'t show, like inbox tabs or extra labels, stay as they are.</p>' +
-      (ui.error ? '<p class="err" role="alert">' + esc(ui.error) + '</p>' : '') +
-      '<div class="actions"><button class="btn primary" type="submit">Save changes</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
+  // ---------- edit view (its own screen, never in place) ----------
+
+  function startEdit(id, from) {
+    const f = id && data.filters.find((x) => x.id === id);
+    if (id && !f) { ui.view = 'list'; toast('That filter no longer exists.'); render(); return; }
+    const v = f ? f.values : { subject: '', to: '', query: '', negatedQuery: '', label: '', actions: [] };
+    const seed = from ? parseSenders(from.split(',').join(', '), []) : { added: [] };
+    ui.edit = {
+      id: f ? f.id : '',
+      senders: f ? (f.senders ? f.senders.slice() : null) : seed.added,
+      rawFrom: f && !f.senders ? v.from : null,
+      values: Object.assign({}, v),
+      kept: f ? f.kept : { criteria: [], actions: [] },
+      showTo: !!v.to, // To is shown only when the filter uses it; once shown, clearing it must still be saved
+
+      bad: [], messages: [], error: '', saving: false,
+    };
+    ui.view = 'edit';
+    render();
   }
+
+  function renderEdit() {
+    const E = ui.edit, v = E.values, isNew = !E.id;
+    const from = E.senders === null
+      ? '<div class="field"><label for="e-from">From</label><input type="text" id="e-from" name="from" value="' + esc(E.rawFrom || '') + '"><span class="sub">This rule uses Gmail search syntax, so it’s edited as text.</span></div>'
+      : '<div class="field"><label for="e-add">From any of these' + (E.senders.length ? ' · ' + E.senders.length : '') + '</label>' +
+        '<div class="tagbox" data-act="focus-add">' +
+          E.senders.map((s, i) => '<span class="tag' + (isDomainSender(s) ? '' : ' person') + '"><span class="ms" aria-hidden="true">' + tagIcon(s) + '</span>' + esc(tagText(s)) +
+            '<button type="button" class="x" data-act="rm" data-i="' + i + '" aria-label="Remove ' + esc(senderLabel(s)) + '"><span class="ms" aria-hidden="true">close</span></button></span>').join('') +
+          E.bad.map((b, i) => '<button type="button" class="tag bad" data-act="fix" data-i="' + i + '" title="Click to fix"><span class="ms" aria-hidden="true">error</span>' + esc(b) + '</button>').join('') +
+          '<input id="e-add" type="text" autocomplete="off" placeholder="' + (E.senders.length ? 'Add more' : 'Add address or domain, or paste a list') + '">' +
+        '</div>' +
+        E.messages.map((m) => '<div class="msg ' + (/^Skipped/.test(m) ? 'info' : 'err') + '"><span class="ms" aria-hidden="true">' + (/^Skipped/.test(m) ? 'info' : 'error') + '</span><span>' + esc(m) + '</span></div>').join('') +
+        '<ul class="hints"><li><span class="ms" aria-hidden="true">domain</span><span>Use <b>domain.com</b> to select all emails from the domain</span></li>' +
+        '<li><span class="ms" aria-hidden="true" style="color: var(--person-icon)">person</span><span>Use <b>mail@domain.com</b> to add a particular email</span></li>' +
+        '<li><span class="ms" aria-hidden="true">keyboard_return</span><span>Enter or a comma adds it. Backspace removes the last one.</span></li></ul></div>';
+
+    const fields = ['subject', 'query', 'negatedQuery'].concat(E.showTo ? ['to'] : []).map((k) =>
+      '<div class="field"><label for="e-' + k + '">' + esc(data.fields[k]) + '</label><input type="text" id="e-' + k + '" name="' + k + '" value="' + esc(v[k] || '') + '" placeholder="' + (k === 'negatedQuery' ? 'Nothing excluded' : k === 'subject' ? 'Any subject' : 'Any words') + '"></div>').join('');
+
+    const kept = E.kept.criteria.concat(E.kept.actions);
+    $('app').innerHTML =
+      '<form class="edit" id="editForm" novalidate>' +
+        '<div style="display:flex;flex-direction:column;gap:4px"><button type="button" class="back" data-act="to-list"><span class="ms" aria-hidden="true">arrow_back</span>All filters</button>' +
+        '<h1>' + (isNew ? 'New filter' : 'Edit filter') + '</h1><span class="sub">' + (isNew ? 'Add who it’s from, what it does, or both' : 'Saving replaces the filter with the new version') + '</span></div>' +
+        '<div class="cols"><section class="col"><h2>Match emails</h2>' + from + fields + '</section>' +
+        '<section class="col"><h2>Then</h2>' +
+          '<div class="field"><label for="e-label">Apply label</label><input type="text" id="e-label" name="label" list="labels" value="' + esc(v.label || '') + '" placeholder="Pick one or type a new name"></div>' +
+          '<datalist id="labels">' + data.labels.map((l) => '<option value="' + esc(l) + '">').join('') + '</datalist>' +
+          '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + ((v.actions || []).includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>' +
+          (kept.length ? '<div class="kept"><b><span class="ms" aria-hidden="true" style="font-size:16px">lock</span>Kept as is</b>' + kept.map((k) => '<span>' + esc(k) + '</span>').join('') + '<span style="font-size:12px;color:var(--faint)">This form doesn’t edit these, and saving won’t change them.</span></div>' : '') +
+        '</section></div>' +
+        (E.error ? '<div class="msg err" role="alert"><span class="ms" aria-hidden="true">error</span><span>' + esc(E.error) + '</span></div>' : '') +
+        '<div class="foot"><span class="note"><span class="ms" aria-hidden="true" style="font-size:16px">sync</span>The side panel refreshes when you close this window</span>' +
+        '<span style="display:flex;gap:8px"><button type="button" class="btn text" data-act="to-list">Cancel</button><button type="submit" class="btn primary"' + (E.saving ? ' disabled' : '') + '>' + (E.saving ? 'Saving…' : isNew ? 'Create filter' : 'Save changes') + '</button></span></div>' +
+      '</form>';
+  }
+
+  /** Keeps what's typed in the form fields, since the edit view is redrawn on every tag change. */
+  function captureValues() {
+    const form = $('editForm'); if (!form) return;
+    const v = ui.edit.values;
+    ['subject', 'query', 'negatedQuery', 'to', 'label'].forEach((k) => { if (form[k]) v[k] = form[k].value; });
+    if (form.from) ui.edit.rawFrom = form.from.value;
+    v.actions = [...form.querySelectorAll('input[name=actions]:checked')].map((x) => x.value);
+  }
+
+  function commitAdd(text) {
+    const E = ui.edit;
+    if (!text.trim()) return false;
+    const r = parseSenders(text, E.senders);
+    E.senders = E.senders.concat(r.added);
+    E.bad = E.bad.concat(r.bad);
+    E.messages = r.messages;
+    return true;
+  }
+
+  function redrawEdit(focusAdd) {
+    captureValues(); renderEdit();
+    if (focusAdd && $('e-add')) $('e-add').focus();
+  }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.target.id !== 'e-add') return;
+    const input = ev.target;
+    if (ev.key === 'Enter' || ev.key === ',') {
+      ev.preventDefault();
+      const text = input.value; input.value = '';
+      if (commitAdd(text)) redrawEdit(true);
+    } else if (ev.key === 'Backspace' && !input.value && ui.edit.senders.length) {
+      ui.edit.senders.pop(); ui.edit.messages = []; redrawEdit(true);
+    }
+  });
+  document.addEventListener('paste', (ev) => {
+    if (ev.target.id !== 'e-add') return;
+    ev.preventDefault();
+    const text = (ev.clipboardData || window.clipboardData).getData('text');
+    if (commitAdd(ev.target.value + ' ' + text)) redrawEdit(true);
+  });
+  document.addEventListener('focusout', (ev) => {
+    // Typing then clicking elsewhere still adds what was typed (but not when clicking a tag's own buttons).
+    if (ev.target.id !== 'e-add' || !ev.target.value.trim()) return;
+    if (ev.relatedTarget && ev.relatedTarget.closest('.tagbox, button[type=submit]')) return;
+    const text = ev.target.value; ev.target.value = '';
+    if (commitAdd(text)) redrawEdit(false);
+  });
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'q') { ui.query = ev.target.value; renderList(); const q = $('q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  });
 
   document.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const id = b.dataset.id;
     switch (b.dataset.act) {
-      case 'more': ui.open[id] = true; break;
-      case 'edit': ui.editing = id; ui.deleting = null; ui.error = ''; break;
-      case 'cancel': ui.editing = null; ui.error = ''; break;
-      case 'del': ui.deleting = id; ui.editing = null; break;
-      case 'del-no': ui.deleting = null; break;
+      case 'refresh': load(); return;
+      case 'new': startEdit(null, ''); return;
+      case 'edit': startEdit(id); return;
+      case 'more': ui.open[id] = true; renderList(); return;
+      case 'del': ui.deleting = id; renderList(); return;
+      case 'del-no': ui.deleting = null; renderList(); return;
       case 'del-yes':
         b.disabled = true;
         google.script.run
           .withSuccessHandler((msg) => { ui.deleting = null; toast(msg); load(); })
-          .withFailureHandler((e) => { ui.deleting = null; toast("Couldn't delete the filter: " + e.message); render(); })
+          .withFailureHandler((e) => { ui.deleting = null; toast('Couldn’t delete the filter: ' + e.message); renderList(); })
           .managerDelete(id);
         return;
-      default: return;
+      case 'to-list': ui.view = 'list'; ui.edit = null; renderList(); return;
+      case 'focus-add': if (ev.target === b && $('e-add')) $('e-add').focus(); return;
+      case 'rm': ui.edit.senders.splice(Number(b.dataset.i), 1); ui.edit.messages = []; redrawEdit(true); return;
+      case 'fix': {
+        // A red tag goes back into the field to be corrected.
+        const text = ui.edit.bad.splice(Number(b.dataset.i), 1)[0];
+        ui.edit.messages = []; redrawEdit(true);
+        $('e-add').value = text; return;
+      }
     }
-    render();
   });
 
   document.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const form = ev.target;
-    const spec = { label: form.label.value.trim(), actions: [...form.querySelectorAll('input[name=actions]:checked')].map((x) => x.value) };
-    form.dataset.fields.split(',').forEach((k) => (spec[k] = form[k].value.trim()));
-    form.querySelector('[type=submit]').disabled = true;
+    const E = ui.edit;
+    const pending = $('e-add') ? $('e-add').value : '';
+    if (pending.trim()) { $('e-add').value = ''; commitAdd(pending); }
+    captureValues();
+    if (E.bad.length) { E.error = 'Fix or remove the red entries first.'; renderEdit(); return; }
+    const v = E.values;
+    const spec = { subject: v.subject.trim(), query: (v.query || '').trim(), negatedQuery: (v.negatedQuery || '').trim(), label: v.label.trim(), actions: v.actions };
+    if (E.showTo) spec.to = (v.to || '').trim();
+    if (E.senders === null) spec.from = (E.rawFrom || '').trim(); else spec.senders = E.senders;
+    E.error = ''; E.saving = true; renderEdit();
     google.script.run
-      .withSuccessHandler((msg) => { ui.editing = null; ui.error = ''; toast(msg); load(); })
-      .withFailureHandler((e) => { ui.error = e.message.replace(/^Exception: /, ''); render(); })
-      .managerSave(form.dataset.id, spec);
+      .withSuccessHandler((msg) => { toast(msg); ui.view = 'list'; ui.edit = null; load(); })
+      .withFailureHandler((e) => { E.saving = false; E.error = e.message.replace(/^Exception: /, '').replace(/^Error: /, ''); renderEdit(); })
+      .managerSave(E.id, spec);
   });
 
-  $('q').addEventListener('input', () => data && render());
-  $('refresh').addEventListener('click', load);
-  load();
+  // Opened from the side panel: ?view=edit&id=… or ?view=new&from=a@x.com,@y.com
+  google.script.url.getLocation((loc) => {
+    const p = loc.parameter || {};
+    load(() => {
+      if (p.view === 'edit' && p.id) startEdit(p.id);
+      else if (p.view === 'new') startEdit(null, p.from || '');
+      else render();
+    });
+  });
 </script>
 </body>
 </html>

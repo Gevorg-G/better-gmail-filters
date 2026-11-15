@@ -1,16 +1,25 @@
-// Card UI and Gmail API calls. Pure logic lives in filters.js; the full view lives in manager.html.
+// Card UI and Gmail API calls. Pure logic lives in filters.js; the popup pages live in manager.html.
 
 const PAGE_SIZE = 20; // keeps each section well under the 100-widget card limit
 
-const CRITERIA_FIELDS = {
-  from: { title: 'From', icon: 'person' },
-  to: { title: 'To', icon: 'alternate_email' },
-  subject: { title: 'Subject contains', icon: 'subject' },
-  query: { title: 'Has the words', icon: 'search' },
-  negatedQuery: { title: "Doesn't have", icon: 'search_off' },
+// ScriptApp.getService().getUrl() returns an ID that 404s when called from the add-on, so the URL is set here.
+// shortcut: this is the HEAD deployment's /dev URL (latest pushed code, editors only); switch to a versioned /exec URL when publishing.
+const FULL_VIEW_URL = 'https://script.google.com/macros/s/AKfycbxi1gHaR5HU1UcOxmZWDXMKOePCxFp0MR1WYV0Aaek/dev';
+
+// Text criteria besides From that the forms can edit.
+const OTHER_FIELDS = {
+  subject: 'And the subject contains',
+  to: 'To',
+  query: 'Has the words',
+  negatedQuery: "Doesn't have",
 };
 
-// ---------- Contextual card: create a filter from the open email ----------
+const DOMAIN_HINT = 'Use <b>domain.com</b> to select all emails from the domain';
+const ADDRESS_HINT = 'Use <b>mail@domain.com</b> to add a particular email';
+
+// ---------- The filter form (create, new, edit) ----------
+// Cards keep no state between clicks, so every action carries `ctx`: the senders so far and how to redraw the form.
+// Typed values (subject, label, checkboxes) come back in formInputs and are redrawn as they were.
 
 function onGmailMessage(e) {
   GmailApp.setCurrentMessageAccessToken(e.gmail.accessToken);
@@ -18,85 +27,204 @@ function onGmailMessage(e) {
   const address = parseAddress(msg.getFrom());
   const domain = senderDomain(address);
   const subject = msg.getSubject() || '';
-
-  return filterFormCard({
-    title: 'Create a filter',
-    subtitle: 'From this email',
-    values: { from: address, subject: '', label: '', actions: [] },
-    fields: ['from', 'subject'],
-    suggestions: { from: domain ? [address, '@' + domain] : [address], subject: subject ? [subject] : [] },
-    hints: { from: domain ? 'Use @' + domain + ' to match the whole domain' : '', subject: 'Leave empty to match any subject' },
-    button: 'Create filter',
-    action: CardService.newAction().setFunctionName('onSaveFilter'),
-  });
+  const ctx = {
+    mode: 'create',
+    id: '',
+    senders: normalizeSender(address) ? [address] : [],
+    rawFrom: null,
+    fields: ['subject'],
+    subtitle: subject ? 'From “' + shorten(subject, 60) + '”' : 'From this email',
+    subjectSuggestion: subject,
+    suggestions: domain ? [{ label: 'Widen to ' + domain, value: '@' + domain, replace: address }] : [],
+  };
+  return filterFormCard(ctx, { subject: '', label: '', actions: [] }, []);
 }
 
-/** One form for creating and editing. opts.fields lists the criteria inputs to show. */
-function filterFormCard(opts) {
-  const v = opts.values;
-  const match = CardService.newCardSection().setHeader('Match emails');
-  opts.fields.forEach((k) => {
-    const input = CardService.newTextInput().setFieldName(k).setTitle(CRITERIA_FIELDS[k].title).setValue(v[k] || '');
-    const hint = (opts.hints || {})[k];
-    if (hint) input.setHint(hint);
-    const sugg = ((opts.suggestions || {})[k] || []).filter(Boolean);
-    if (sugg.length) {
-      const s = CardService.newSuggestions();
-      sugg.forEach((x) => s.addSuggestion(x));
-      input.setSuggestions(s);
+function onNewFilter() {
+  const ctx = { mode: 'new', id: '', senders: [], rawFrom: null, fields: ['subject'], subtitle: "Add who it's from, what it does, or both" };
+  return pushCard(filterFormCard(ctx, { subject: '', label: '', actions: [] }, []));
+}
+
+function onEditFilter(e) {
+  const id = e.commonEventObject.parameters.id;
+  const filter = getFilter(id);
+  if (!filter) return notify('This filter no longer exists. Reload the add-on to refresh the list.');
+  const names = labelNames();
+  const c = filter.criteria || {};
+  const senders = sendersFromCriteria(c.from);
+  const kept = keptParts(filter, names);
+  const ctx = {
+    mode: 'edit',
+    id: id,
+    senders: senders || [],
+    rawFrom: senders ? null : c.from,
+    // Always offer Subject; show the other text criteria only when the filter uses them.
+    fields: Object.keys(OTHER_FIELDS).filter((k) => k === 'subject' || c[k]),
+    subtitle: 'Saving replaces the filter with the new version',
+    kept: kept.criteria,
+    keptActions: kept.actions,
+  };
+  return pushCard(filterFormCard(ctx, formValues(filter, names), []));
+}
+
+function filterFormCard(ctx, v, messages) {
+  const titles = { create: 'Create a filter', new: 'New filter', edit: 'Edit filter' };
+  const from = CardService.newCardSection().setHeader('From any of these' + (ctx.rawFrom === null && ctx.senders.length ? ' · ' + ctx.senders.length : ''));
+
+  if (ctx.rawFrom !== null) {
+    from.addWidget(
+      CardService.newTextInput().setFieldName('from').setTitle('From').setValue(v.from || '')
+        .setHint("This rule uses Gmail search syntax, so it's edited as text.")
+    );
+  } else {
+    if (ctx.senders.length) {
+      const chips = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
+      ctx.senders.forEach((s, i) => {
+        chips.addChip(
+          CardService.newChip()
+            .setLabel((isDomainSender(s) ? s.slice(1) : s) + '  ✕')
+            .setIcon(icon(isDomainSender(s) ? 'domain' : 'person'))
+            .setOnClickAction(formAction('onRemoveSender', ctx, { index: String(i) }))
+        );
+      });
+      from.addWidget(chips);
+    } else {
+      from.addWidget(CardService.newTextParagraph().setText('<font color="#444746">No senders yet: matches email from anyone.</font>'));
     }
+
+    const suggestions = (ctx.suggestions || []).filter((x) => ctx.senders.indexOf(x.value) === -1);
+    if (suggestions.length) {
+      const chips = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
+      suggestions.forEach((x) => {
+        chips.addChip(
+          CardService.newChip().setLabel(x.label).setIcon(icon('domain'))
+            .setOnClickAction(formAction('onSuggestSender', ctx, { value: x.value, replace: x.replace || '' }))
+        );
+      });
+      from.addWidget(chips);
+    }
+
+    from
+      .addWidget(CardService.newTextInput().setFieldName('add').setTitle('Add address or domain').setValue(v.add || ''))
+      .addWidget(CardService.newTextButton().setText('Add').setOnClickAction(formAction('onAddSenders', ctx)));
+    messages.forEach((m) => {
+      const color = /^Skipped/.test(m) ? '#444746' : '#b3261e';
+      from.addWidget(CardService.newTextParagraph().setText('<font color="' + color + '">' + escapeHtml(m) + '</font>'));
+    });
+    from.addWidget(decorated('domain', '', DOMAIN_HINT)).addWidget(decorated('person', '', ADDRESS_HINT));
+  }
+
+  const match = CardService.newCardSection();
+  ctx.fields.forEach((k) => {
+    const input = CardService.newTextInput().setFieldName(k).setTitle(OTHER_FIELDS[k]).setValue(v[k] || '');
+    if (k === 'subject') input.setHint('Leave empty to match any subject');
+    if (k === 'subject' && ctx.subjectSuggestion) input.setSuggestions(CardService.newSuggestions().addSuggestion(ctx.subjectSuggestion));
     match.addWidget(input);
   });
-  if (opts.kept && opts.kept.length) {
-    match.addWidget(decorated('lock', 'Also matches (kept as is)', opts.kept.map(escapeHtml).join('<br>')));
+  if (ctx.kept && ctx.kept.length) {
+    match.addWidget(decorated('lock', 'Also matches (kept as is)', ctx.kept.map(escapeHtml).join('<br>')));
   }
 
   const labels = CardService.newSuggestions();
   userLabels().forEach((l) => labels.addSuggestion(l.name));
-  const checks = CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setFieldName('actions');
-  Object.keys(ACTIONS).forEach((key) => checks.addItem(ACTIONS[key].title, key, v.actions.includes(key)));
-
+  const checks = CardService.newSelectionInput().setType(CardService.SelectionInputType.CHECK_BOX).setFieldName('actions');
+  Object.keys(ACTIONS).forEach((key) => checks.addItem(ACTIONS[key].title, key, (v.actions || []).indexOf(key) !== -1));
   const then = CardService.newCardSection()
     .setHeader('Then')
     .addWidget(
-      CardService.newTextInput()
-        .setFieldName('label')
-        .setTitle('Apply label')
-        .setValue(v.label || '')
-        .setHint('Pick one or type a new name')
-        .setSuggestions(labels)
+      CardService.newTextInput().setFieldName('label').setTitle('Apply label').setValue(v.label || '')
+        .setHint('Pick one or type a new name').setSuggestions(labels)
     )
     .addWidget(checks);
-  if (opts.keptActions && opts.keptActions.length) {
-    then.addWidget(decorated('lock', 'Also does (kept as is)', opts.keptActions.map(escapeHtml).join('<br>')));
+  if (ctx.keptActions && ctx.keptActions.length) {
+    then.addWidget(decorated('lock', 'Also does (kept as is)', ctx.keptActions.map(escapeHtml).join('<br>')));
   }
 
-  opts.action.setParameters({ id: opts.id || '', fields: opts.fields.join(',') });
+  const footer = CardService.newFixedFooter().setPrimaryButton(
+    filledButton(ctx.mode === 'edit' ? 'Save changes' : 'Create filter', formAction('onSaveFilter', ctx))
+  );
+  const popup = ctx.mode === 'edit' ? { view: 'edit', id: ctx.id } : { view: 'new', from: ctx.senders.join(',') };
+  footer.setSecondaryButton(overlayButton('Larger window', popupUrl(popup)));
+
   return CardService.newCardBuilder()
-    .setHeader(CardService.newCardHeader().setTitle(opts.title).setSubtitle(opts.subtitle || ''))
+    .setHeader(CardService.newCardHeader().setTitle(titles[ctx.mode]).setSubtitle(ctx.subtitle || ''))
+    .addSection(from)
     .addSection(match)
     .addSection(then)
-    .setFixedFooter(CardService.newFixedFooter().setPrimaryButton(filledButton(opts.button, opts.action)))
+    .setFixedFooter(footer)
     .build();
 }
 
-function onSaveFilter(e) {
-  const p = e.commonEventObject.parameters;
+function formAction(fn, ctx, extra) {
+  return CardService.newAction().setFunctionName(fn).setParameters(Object.assign({ ctx: JSON.stringify(ctx) }, extra || {}));
+}
+
+/** Reads the form back. Empty inputs are left out of formInputs, so a missing field means it was cleared. */
+function readForm(e, ctx) {
   const inputs = e.commonEventObject.formInputs || {};
   const value = (name) => ((inputs[name] ? inputs[name].stringInputs.value : [])[0] || '').trim();
-  // Empty inputs are left out of formInputs, so every field the form showed is read explicitly.
-  const spec = { label: value('label'), actions: inputs.actions ? inputs.actions.stringInputs.value : [] };
-  p.fields.split(',').forEach((k) => (spec[k] = value(k)));
+  const v = { label: value('label'), add: value('add'), actions: inputs.actions ? inputs.actions.stringInputs.value : [] };
+  ctx.fields.forEach((k) => (v[k] = value(k)));
+  if (ctx.rawFrom !== null) v.from = value('from');
+  return v;
+}
+
+function redraw(ctx, v, messages) {
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(filterFormCard(ctx, v, messages)))
+    .build();
+}
+
+function onAddSenders(e) {
+  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
+  const v = readForm(e, ctx);
+  if (!v.add) return redraw(ctx, v, ['Type an address or domain first.']);
+  const r = parseSenders(v.add, ctx.senders);
+  ctx.senders = ctx.senders.concat(r.added);
+  v.add = r.bad.join(', '); // only what needs fixing stays in the field
+  return redraw(ctx, v, r.messages);
+}
+
+function onRemoveSender(e) {
+  const p = e.commonEventObject.parameters;
+  const ctx = JSON.parse(p.ctx);
+  const v = readForm(e, ctx);
+  ctx.senders.splice(Number(p.index), 1);
+  return redraw(ctx, v, []);
+}
+
+function onSuggestSender(e) {
+  const p = e.commonEventObject.parameters;
+  const ctx = JSON.parse(p.ctx);
+  const v = readForm(e, ctx);
+  // Widening to a domain replaces the address it came from and any other address at that domain.
+  ctx.senders = ctx.senders.filter((s) => s !== p.replace && !(isDomainSender(p.value) && senderDomain(s) === p.value.slice(1)));
+  if (ctx.senders.indexOf(p.value) === -1) ctx.senders.push(p.value);
+  return redraw(ctx, v, []);
+}
+
+function onSaveFilter(e) {
+  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
+  const v = readForm(e, ctx);
+  if (v.add) {
+    // Text typed but not added yet: add it, or show why not.
+    const r = parseSenders(v.add, ctx.senders);
+    ctx.senders = ctx.senders.concat(r.added);
+    v.add = r.bad.join(', ');
+    if (r.bad.length) return redraw(ctx, v, r.messages);
+  }
+  const spec = { label: v.label, actions: v.actions };
+  ctx.fields.forEach((k) => (spec[k] = v[k]));
+  if (ctx.rawFrom !== null) spec.from = v.from;
+  else spec.senders = ctx.senders;
 
   let message;
   try {
-    message = saveFilter(p.id || null, spec);
+    message = saveFilter(ctx.id || null, spec);
   } catch (err) {
     return notify(err.message);
   }
-  if (!p.id) return notify(message);
+  if (ctx.mode === 'create') return notify(message);
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().popToRoot().updateCard(filterListCard(0)))
     .setNotification(CardService.newNotification().setText(message))
@@ -105,6 +233,7 @@ function onSaveFilter(e) {
 
 /**
  * Creates a filter, or replaces filter `id` (Gmail can't update filters in place).
+ * spec.senders (an array), when given, becomes the From criterion.
  * The new version is created before the old one is deleted, so a failure never loses a filter.
  * Throws an Error whose message is safe to show the user.
  */
@@ -118,6 +247,11 @@ function saveFilter(id, spec) {
         ? 'Gmail is at its 1,000-filter limit, and saving a change needs one free slot. Delete another filter first.'
         : 'Gmail allows 1,000 filters and you have reached it. Delete one first.'
     );
+  }
+  spec = Object.assign({}, spec);
+  if (Array.isArray(spec.senders)) {
+    spec.from = sendersToFrom(spec.senders, base.criteria && base.criteria.from);
+    delete spec.senders;
   }
 
   // Check with a placeholder label first, so an invalid or duplicate filter never creates a new label.
@@ -145,7 +279,31 @@ function saveFilter(id, spec) {
   return 'Filter updated.';
 }
 
-// ---------- Homepage: list, view, edit and delete filters ----------
+/** The parts of a filter the forms don't edit, in words. They're kept as they are on save. */
+function keptParts(filter, names) {
+  const c = filter.criteria || {};
+  const a = filter.action || {};
+  const otherCriteria = Object.keys(c)
+    .filter((k) => EDITABLE_CRITERIA.indexOf(k) === -1)
+    .reduce((o, k) => ((o[k] = c[k]), o), {});
+  const managed = Object.keys(ACTIONS).map((k) => ACTIONS[k].add || ACTIONS[k].remove);
+  const userLabel = (a.addLabelIds || []).find(isUserLabel);
+  return {
+    criteria: filterCriteria({ criteria: otherCriteria }).map((x) => x.name + (x.values.length ? ': ' + x.values.join(', ') : '')),
+    actions: filterActions(
+      {
+        action: {
+          addLabelIds: (a.addLabelIds || []).filter((x) => x !== userLabel && managed.indexOf(x) === -1),
+          removeLabelIds: (a.removeLabelIds || []).filter((x) => managed.indexOf(x) === -1),
+          forward: a.forward,
+        },
+      },
+      names
+    ),
+  };
+}
+
+// ---------- Homepage: list, view and delete filters ----------
 
 function onHomepage() {
   return filterListCard(0);
@@ -175,7 +333,7 @@ function filterListCard(page) {
 
   const section = CardService.newCardSection();
   if (filters.length === 0) {
-    section.addWidget(decorated('filter_alt', '', 'No filters yet. Open an email to create one.'));
+    section.addWidget(decorated('filter_alt', '', 'No filters yet. Create one, or open an email to start from it.'));
   }
   slice.forEach((f) => {
     section.addWidget(
@@ -203,21 +361,11 @@ function filterListCard(page) {
     card.addSection(CardService.newCardSection().addWidget(nav));
   }
 
-  const url = fullViewUrl();
-  if (url) {
-    card.setFixedFooter(
-      CardService.newFixedFooter().setPrimaryButton(
-        CardService.newTextButton()
-          .setText('Open full view')
-          .setOpenLink(
-            CardService.newOpenLink()
-              .setUrl(url)
-              .setOpenAs(CardService.OpenAs.OVERLAY)
-              .setOnClose(CardService.OnClose.RELOAD_ADD_ON)
-          )
-      )
-    );
-  }
+  card.setFixedFooter(
+    CardService.newFixedFooter()
+      .setPrimaryButton(filledButton('New filter', CardService.newAction().setFunctionName('onNewFilter')))
+      .setSecondaryButton(overlayButton('Full view', popupUrl({})))
+  );
   return card.build();
 }
 
@@ -248,12 +396,19 @@ function onOpenFilter(e) {
   if (!filter) return notify('This filter no longer exists. Reload the add-on to refresh the list.');
   const names = labelNames();
   const summary = summarizeFilter(filter, names);
+  const c = filter.criteria || {};
+  const senders = sendersFromCriteria(c.from);
 
   const when = CardService.newCardSection().setHeader('When an email matches');
+  if (senders && senders.length) {
+    const chips = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
+    senders.forEach((s) => chips.addChip(CardService.newChip().setLabel(isDomainSender(s) ? s.slice(1) : s).setIcon(icon(isDomainSender(s) ? 'domain' : 'person'))));
+    when.addWidget(CardService.newTextParagraph().setText('<font color="#444746">From any of these · ' + senders.length + '</font>')).addWidget(chips);
+  }
   const icons = { From: 'person', To: 'alternate_email', Subject: 'subject', Has: 'search', "Doesn't have": 'search_off' };
-  filterCriteria(filter).forEach((c) => {
-    when.addWidget(decorated(icons[c.name] || 'attach_file', c.name, c.values.map(escapeHtml).join('<br>') || 'Yes'));
-  });
+  filterCriteria(filter)
+    .filter((x) => !(x.name === 'From' && senders))
+    .forEach((x) => when.addWidget(decorated(icons[x.name] || 'attach_file', x.name, x.values.map(escapeHtml).join('<br>') || 'Yes')));
 
   const then = CardService.newCardSection().setHeader('Then');
   filterActions(filter, names).forEach((a) => then.addWidget(decorated('arrow_forward', '', escapeHtml(a))));
@@ -275,47 +430,6 @@ function onOpenFilter(e) {
     )
     .build();
   return pushCard(card);
-}
-
-function onEditFilter(e) {
-  const id = e.commonEventObject.parameters.id;
-  const filter = getFilter(id);
-  if (!filter) return notify('This filter no longer exists. Reload the add-on to refresh the list.');
-  const names = labelNames();
-  const values = formValues(filter, names);
-  const c = filter.criteria || {};
-  const a = filter.action || {};
-
-  // Always offer From and Subject; show the other text criteria only when the filter uses them.
-  const fields = Object.keys(CRITERIA_FIELDS).filter((k) => k === 'from' || k === 'subject' || c[k]);
-  const kept = filterCriteria({ criteria: Object.keys(c).filter((k) => !EDITABLE_CRITERIA.includes(k)).reduce((o, k) => ((o[k] = c[k]), o), {}) })
-    .map((x) => x.name + (x.values.length ? ': ' + x.values.join(', ') : ''));
-  const managed = Object.keys(ACTIONS).map((k) => ACTIONS[k].add || ACTIONS[k].remove);
-  const userLabel = (a.addLabelIds || []).find(isUserLabel);
-  const keptActions = filterActions(
-    {
-      action: {
-        addLabelIds: (a.addLabelIds || []).filter((x) => x !== userLabel && !managed.includes(x)),
-        removeLabelIds: (a.removeLabelIds || []).filter((x) => !managed.includes(x)),
-        forward: a.forward,
-      },
-    },
-    names
-  );
-
-  return pushCard(
-    filterFormCard({
-      id: id,
-      title: 'Edit filter',
-      subtitle: 'Saving replaces the filter with the new version',
-      values: values,
-      fields: fields,
-      kept: kept,
-      keptActions: keptActions,
-      button: 'Save changes',
-      action: CardService.newAction().setFunctionName('onSaveFilter'),
-    })
-  );
 }
 
 function onDeleteFilter(e) {
@@ -354,36 +468,49 @@ function onCancel() {
   return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().popCard()).build();
 }
 
-// ---------- Full view (manager.html, opened as an overlay) ----------
+// ---------- Popup pages (manager.html, opened as an overlay) ----------
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('manager')
-    .setTitle('Better Gmail Filters')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  const page = HtmlService.createTemplateFromFile('manager');
+  page.shared = sharedSource();
+  return page.evaluate().setTitle('Better Gmail Filters').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-// ScriptApp.getService().getUrl() returns an ID that 404s when called from the add-on, so the URL is set here.
-// shortcut: this is the HEAD deployment's /dev URL (latest pushed code, editors only); switch to a versioned /exec URL when publishing.
-const FULL_VIEW_URL = 'https://script.google.com/macros/s/AKfycbxi1gHaR5HU1UcOxmZWDXMKOePCxFp0MR1WYV0Aaek/dev';
-
-function fullViewUrl() {
-  return FULL_VIEW_URL;
+/** The sender parsing code, sent to the popup page so the tag input there works instantly with the same rules. */
+function sharedSource() {
+  return [parseAddress, senderDomain, splitAlternatives, isDomainSender, senderLabel, normalizeSender, parseSenders]
+    .map(String)
+    .join('\n');
 }
 
-/** Everything the full view needs in one call. */
+/** Popup URL for a view: {} = all filters, {view:'edit', id}, {view:'new', from:'a@x.com,@y.com'}. */
+function popupUrl(params) {
+  const query = Object.keys(params)
+    .filter((k) => params[k])
+    .map((k) => k + '=' + encodeURIComponent(params[k]))
+    .join('&');
+  return FULL_VIEW_URL + (query ? '?' + query : '');
+}
+
+/** Everything the popup needs in one call. */
 function managerData() {
   const names = labelNames();
   return {
     labels: Object.keys(names).map((id) => names[id]).sort(),
     actions: Object.keys(ACTIONS).map((k) => ({ key: k, title: ACTIONS[k].title })),
-    filters: listFilters().map((f) => ({
-      id: f.id,
-      icon: filterIcon(f),
-      summary: summarizeFilter(f, names),
-      criteria: filterCriteria(f),
-      actions: filterActions(f, names),
-      values: formValues(f, names),
-    })),
+    fields: OTHER_FIELDS,
+    filters: listFilters().map((f) => {
+      const senders = sendersFromCriteria((f.criteria || {}).from);
+      return {
+        id: f.id,
+        icon: filterIcon(f),
+        summary: summarizeFilter(f, names),
+        senders: senders,
+        criteria: filterCriteria(f).filter((x) => !(x.name === 'From' && senders)),
+        values: formValues(f, names),
+        kept: keptParts(f, names),
+      };
+    }),
   };
 }
 
@@ -410,6 +537,14 @@ function decorated(iconName, topLabel, html) {
 
 function filledButton(text, action) {
   return CardService.newTextButton().setText(text).setTextButtonStyle(CardService.TextButtonStyle.FILLED).setOnClickAction(action);
+}
+
+function overlayButton(text, url) {
+  return CardService.newTextButton()
+    .setText(text)
+    .setOpenLink(
+      CardService.newOpenLink().setUrl(url).setOpenAs(CardService.OpenAs.OVERLAY).setOnClose(CardService.OnClose.RELOAD_ADD_ON)
+    );
 }
 
 function pushCard(card) {
