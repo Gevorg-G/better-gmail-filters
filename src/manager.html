@@ -204,7 +204,8 @@
     f.criteria.forEach((c) => lines.push('<div class="line"><span class="k">' + esc(c.name) + '</span><span class="val">' + (c.values.map(esc).join(', ') || 'Yes') + '</span></div>'));
     const tail = ui.deleting === f.id
       ? '<div class="confirm">Delete this filter? This can’t be undone. <button class="btn danger" data-act="del-yes" data-id="' + f.id + '">Delete</button><button class="btn" data-act="del-no">Cancel</button></div>'
-      : '<div class="tools"><button class="icon-btn" data-act="edit" data-id="' + f.id + '" aria-label="Edit filter" title="Edit"><span class="ms">edit</span></button>' +
+      : '<div class="tools"><a class="icon-btn" href="' + esc(f.searchUrl) + '" target="_blank" rel="noopener" aria-label="Show matching emails" title="Show matching emails"><span class="ms">search</span></a>' +
+        '<button class="icon-btn" data-act="edit" data-id="' + f.id + '" aria-label="Edit filter" title="Edit"><span class="ms">edit</span></button>' +
         '<button class="icon-btn" data-act="del" data-id="' + f.id + '" aria-label="Delete filter" title="Delete"><span class="ms">delete</span></button></div>';
     return '<div class="row"><div class="crit">' + (lines.join('') || '<span class="val">Any email</span>') + '</div>' + tail + '</div>';
   }
@@ -273,7 +274,8 @@
       '<div class="band"><div class="band-in"><button type="button" class="back" data-act="to-list"><span class="ms" aria-hidden="true">arrow_back</span>All filters</button>' +
         '<h1>' + (isNew ? 'New filter' : 'Edit filter') + '</h1><span class="sub">' + (isNew ? 'Add who it’s from, what it does, or both' : 'Saving replaces the filter with the new version') + '</span></div></div>' +
       '<form class="edit" id="editForm" novalidate>' +
-        '<section class="sect"><h2>Match emails</h2>' + from + fields + '</section>' +
+        '<section class="sect"><h2>Match emails</h2>' + from + fields +
+          frow('', '', '<a class="more" href="#" target="_blank" rel="noopener" data-act="search-preview" style="align-self:flex-start;text-decoration:none"><span class="ms" aria-hidden="true" style="font-size:16px">search</span> Show matching emails</a>') + '</section>' +
         '<section class="sect"><h2>Then</h2>' +
           frow('Apply label', 'e-label', '<input type="text" id="e-label" name="label" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" value="' + esc(v.label || '') + '" placeholder="Pick one or type a new name">') +
           frow('Also', '', '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + ((v.actions || []).includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>') +
@@ -455,6 +457,15 @@
         return;
       case 'to-list': ui.view = 'list'; ui.edit = null; renderList(); return;
       case 'focus-add': if (ev.target === b && $('e-add')) $('e-add').focus(); return;
+      case 'search-preview': {
+        // Built at click time from the form as it is now, saved or not; the link then opens in a new tab.
+        captureValues();
+        const E = ui.edit, v = E.values;
+        const c = { from: E.senders === null ? E.rawFrom : sendersToFrom(E.senders, ''), subject: E.terms === null ? v.subject : termsToSubject(E.terms, ''),
+          query: v.query, negatedQuery: v.negatedQuery, to: E.showTo ? v.to : '' };
+        b.href = gmailSearchUrl(filterQuery(c));
+        return;
+      }
       case 'focus-subj': if (ev.target === b && $('e-subj')) $('e-subj').focus(); return;
       case 'rm-subj': ui.edit.terms.splice(Number(b.dataset.i), 1); redrawEdit('e-subj'); return;
       case 'subj-hint': addTerms('"' + ui.edit.subjectHint + '"'); redrawEdit('e-subj'); return;

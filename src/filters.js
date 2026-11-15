@@ -123,6 +123,27 @@ function termsToSubject(terms, originalSubject) {
   return '(' + terms.map((t) => (/\s/.test(t) ? '"' + t + '"' : t)).join(' OR ') + ')';
 }
 
+// ---------- Search: the emails a filter matches ----------
+
+/** A filter's criteria as the Gmail search that finds the same emails. */
+function filterQuery(c) {
+  c = c || {};
+  const group = (v) => (/^\(.*\)$/.test(v) ? v : '(' + v + ')');
+  const q = [];
+  if (c.from) q.push('from:' + group(c.from));
+  if (c.to) q.push('to:' + group(c.to));
+  if (c.subject) q.push('subject:' + group(c.subject));
+  if (c.query) q.push(c.query);
+  if (c.negatedQuery) q.push('-' + group(c.negatedQuery));
+  if (c.hasAttachment) q.push('has:attachment');
+  if (c.size) q.push((c.sizeComparison === 'smaller' ? 'smaller:' : 'larger:') + c.size);
+  return q.join(' ');
+}
+
+function gmailSearchUrl(query) {
+  return 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(query);
+}
+
 // Criteria the forms can edit. Anything else on a filter (size, attachments, categories, forwarding,
 // extra labels) is kept as-is, so editing never drops part of a filter the form doesn't show.
 const EDITABLE_CRITERIA = ['from', 'to', 'subject', 'query', 'negatedQuery'];

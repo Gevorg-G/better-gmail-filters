@@ -383,6 +383,11 @@ function onOpenFilter(e) {
     .filter((x) => !(x.name === 'From' && senders))
     .forEach((x) => when.addWidget(decorated(icons[x.name] || 'attach_file', x.name, x.values.map(escapeHtml).join('<br>') || 'Yes')));
 
+  when.addWidget(
+    CardService.newTextButton().setText('Show matching emails')
+      .setOpenLink(CardService.newOpenLink().setUrl(gmailSearchUrl(filterQuery(c))).setOpenAs(CardService.OpenAs.FULL_SIZE))
+  );
+
   const then = CardService.newCardSection().setHeader('Then');
   filterActions(filter, names).forEach((a) => then.addWidget(decorated('arrow_forward', '', escapeHtml(a))));
 
@@ -451,7 +456,8 @@ function doGet() {
 
 /** The sender parsing code, sent to the popup page so the tag input there works instantly with the same rules. */
 function sharedSource() {
-  return [parseAddress, senderDomain, splitAlternatives, isDomainSender, senderLabel, normalizeSender, parseSenders, subjectTerms]
+  return [parseAddress, senderDomain, splitAlternatives, isDomainSender, senderLabel, normalizeSender, parseSenders, subjectTerms,
+    sendersFromCriteria, sendersToFrom, termsToSubject, filterQuery, gmailSearchUrl]
     .map(String)
     .join('\n');
 }
@@ -480,6 +486,7 @@ function managerData() {
         summary: summarizeFilter(f, names),
         senders: senders,
         subjectTerms: subjectTerms((f.criteria || {}).subject),
+        searchUrl: gmailSearchUrl(filterQuery(f.criteria)),
         criteria: filterCriteria(f).filter((x) => !(x.name === 'From' && senders) && !(x.name === 'Subject' && subjectTerms((f.criteria || {}).subject))),
         values: formValues(f, names),
         kept: keptParts(f, names),

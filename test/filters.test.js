@@ -117,3 +117,11 @@ test('termsToSubject quotes phrases and keeps unchanged text', () => {
   const original = '(receipt OR invoice OR billing OR Квитанция)';
   assert.strictEqual(ctx.termsToSubject(['Квитанция', 'receipt', 'billing', 'invoice'], original), original);
 });
+
+test('filterQuery builds the Gmail search a filter matches', () => {
+  assert.strictEqual(ctx.filterQuery({ from: '*@email.apple.com', subject: '(receipt OR invoice OR billing OR Квитанция)' }),
+    'from:(*@email.apple.com) subject:(receipt OR invoice OR billing OR Квитанция)');
+  assert.strictEqual(ctx.filterQuery({ from: 'a.com | b@c.io', subject: 'Invoice', negatedQuery: 'spam', hasAttachment: true }),
+    'from:(a.com | b@c.io) subject:(Invoice) -(spam) has:attachment');
+  assert.match(ctx.gmailSearchUrl('from:(x.com)'), /#search\/from%3A\(x\.com\)$/);
+});
