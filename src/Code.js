@@ -101,10 +101,23 @@ function onHomepage() {
   return filterListCard(0);
 }
 
-function filterListCard(page) {
-  const filters = listFilters();
+function labelNames() {
   const names = {};
   userLabels().forEach((l) => (names[l.id] = l.name));
+  return names;
+}
+
+// Card text accepts a small HTML subset, so user-written filter text must be escaped.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+function filterListCard(page) {
+  const names = labelNames();
+  // Sorting by destination puts filters that file mail to the same place next to each other.
+  const filters = listFilters()
+    .map((f) => ({ id: f.id, summary: summarizeFilter(f, names) }))
+    .sort((a, b) => a.summary.title.localeCompare(b.summary.title));
 
   const pages = Math.max(1, Math.ceil(filters.length / PAGE_SIZE));
   page = Math.min(Math.max(0, page), pages - 1);
@@ -115,18 +128,12 @@ function filterListCard(page) {
     section.addWidget(CardService.newTextParagraph().setText('No filters yet. Open an email to create one.'));
   }
   slice.forEach((f) => {
-    const text = describeFilter(f, names);
     section.addWidget(
       CardService.newDecoratedText()
-        .setText(text)
+        .setText(escapeHtml(f.summary.title))
+        .setBottomLabel(escapeHtml(f.summary.subtitle))
         .setWrapText(true)
-        .setButton(
-          CardService.newTextButton()
-            .setText('Delete')
-            .setOnClickAction(
-              CardService.newAction().setFunctionName('onDeleteFilter').setParameters({ id: f.id, text: text })
-            )
-        )
+        .setOnClickAction(CardService.newAction().setFunctionName('onOpenFilter').setParameters({ id: f.id }))
     );
   });
 
@@ -160,13 +167,55 @@ function onPage(e) {
     .build();
 }
 
+function onOpenFilter(e) {
+  const id = e.commonEventObject.parameters.id;
+  let filter;
+  try {
+    filter = Gmail.Users.Settings.Filters.get('me', id);
+  } catch (err) {
+    return notify('This filter no longer exists. Reload the add-on to refresh the list.');
+  }
+  const names = labelNames();
+  const summary = summarizeFilter(filter, names);
+
+  const when = CardService.newCardSection().setHeader('When an email matches');
+  filterCriteria(filter).forEach((c) => {
+    when.addWidget(
+      CardService.newDecoratedText()
+        .setTopLabel(c.name)
+        .setText(c.values.map(escapeHtml).join('<br>') || 'Yes')
+        .setWrapText(true)
+    );
+  });
+
+  const then = CardService.newCardSection()
+    .setHeader('Then')
+    .addWidget(CardService.newTextParagraph().setText(filterActions(filter, names).map(escapeHtml).join('<br>') || 'No action'))
+    .addWidget(
+      CardService.newTextButton()
+        .setText('Delete filter')
+        .setOnClickAction(
+          CardService.newAction().setFunctionName('onDeleteFilter').setParameters({ id: id, text: summary.title + '\n' + summary.subtitle })
+        )
+    );
+
+  const card = CardService.newCardBuilder()
+    .setHeader(CardService.newCardHeader().setTitle(summary.title))
+    .addSection(when)
+    .addSection(then)
+    .build();
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().pushCard(card))
+    .build();
+}
+
 function onDeleteFilter(e) {
   const p = e.commonEventObject.parameters;
   const confirm = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle('Delete this filter?'))
     .addSection(
       CardService.newCardSection()
-        .addWidget(CardService.newTextParagraph().setText(p.text))
+        .addWidget(CardService.newTextParagraph().setText(escapeHtml(p.text).replace('\n', '<br>') + '<br><br>This can\'t be undone.'))
         .addWidget(
           CardService.newButtonSet()
             .addButton(

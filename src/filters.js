@@ -63,35 +63,63 @@ function sameFilter(a, b) {
 }
 
 const SYSTEM_ACTION_TEXT = {
-  'remove:INBOX': 'skip inbox',
-  'remove:UNREAD': 'mark read',
-  'add:STARRED': 'star',
-  'remove:SPAM': 'never spam',
-  'add:IMPORTANT': 'mark important',
-  'remove:IMPORTANT': 'never important',
-  'add:TRASH': 'delete',
+  'remove:INBOX': 'Skip inbox',
+  'remove:UNREAD': 'Mark read',
+  'add:STARRED': 'Star',
+  'remove:SPAM': 'Never spam',
+  'add:IMPORTANT': 'Mark important',
+  'remove:IMPORTANT': 'Never important',
+  'add:TRASH': 'Delete',
+  'add:CATEGORY_PERSONAL': 'Primary tab',
+  'add:CATEGORY_SOCIAL': 'Social tab',
+  'add:CATEGORY_PROMOTIONS': 'Promotions tab',
+  'add:CATEGORY_UPDATES': 'Updates tab',
+  'add:CATEGORY_FORUMS': 'Forums tab',
 };
 
-/** Plain-language one-liner, e.g. "From: a@b.com → label Work, skip inbox" */
-function describeFilter(filter, labelNames) {
+/** "(*@a.com | b@c.com OR d@e.com)" -> ["@a.com", "b@c.com", "d@e.com"] */
+function splitAlternatives(value) {
+  return String(value)
+    .replace(/^\s*\((.*)\)\s*$/, '$1')
+    .split(/\s*(?:\||\bOR\b)\s*/)
+    .map((s) => s.trim().replace(/^\*@/, '@'))
+    .filter(Boolean);
+}
+
+/** [{name, values}] for each criterion the filter uses. */
+function filterCriteria(filter) {
   const c = filter.criteria || {};
-  const when = [];
-  if (c.from) when.push('From: ' + c.from);
-  if (c.to) when.push('To: ' + c.to);
-  if (c.subject) when.push('Subject: ' + c.subject);
-  if (c.query) when.push('Has: ' + c.query);
-  if (c.negatedQuery) when.push("Doesn't have: " + c.negatedQuery);
-  if (c.hasAttachment) when.push('Has attachment');
+  const out = [];
+  if (c.from) out.push({ name: 'From', values: splitAlternatives(c.from) });
+  if (c.to) out.push({ name: 'To', values: splitAlternatives(c.to) });
+  if (c.subject) out.push({ name: 'Subject', values: [c.subject] });
+  if (c.query) out.push({ name: 'Has', values: splitAlternatives(c.query) });
+  if (c.negatedQuery) out.push({ name: "Doesn't have", values: splitAlternatives(c.negatedQuery) });
+  if (c.hasAttachment) out.push({ name: 'Has attachment', values: [] });
+  return out;
+}
 
+/** Plain-language actions, e.g. ["Work", "Skip inbox"]. User labels show by name. */
+function filterActions(filter, labelNames) {
   const a = filter.action || {};
-  const then = [];
-  (a.addLabelIds || []).forEach((id) => {
-    then.push(SYSTEM_ACTION_TEXT['add:' + id] || 'label ' + (labelNames[id] || id));
-  });
-  (a.removeLabelIds || []).forEach((id) => {
-    then.push(SYSTEM_ACTION_TEXT['remove:' + id] || 'remove label ' + (labelNames[id] || id));
-  });
-  if (a.forward) then.push('forward to ' + a.forward);
+  const out = [];
+  (a.addLabelIds || []).forEach((id) => out.push(SYSTEM_ACTION_TEXT['add:' + id] || labelNames[id] || id));
+  (a.removeLabelIds || []).forEach((id) => out.push(SYSTEM_ACTION_TEXT['remove:' + id] || 'Remove ' + (labelNames[id] || id)));
+  if (a.forward) out.push('Forward to ' + a.forward);
+  return out;
+}
 
-  return (when.join(', ') || 'Any email') + ' → ' + (then.join(', ') || 'no action');
+const shorten = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+
+/** Two short lines for a list row: what happens (title) and what it matches (subtitle). */
+function summarizeFilter(filter, labelNames) {
+  const when = filterCriteria(filter).map((c) => {
+    if (!c.values.length) return c.name;
+    const shown = c.values.slice(0, 2).map((v) => shorten(v, 40)).join(', ');
+    return c.name + ': ' + shown + (c.values.length > 2 ? ' +' + (c.values.length - 2) + ' more' : '');
+  });
+  return {
+    title: filterActions(filter, labelNames).join(' · ') || 'No action',
+    subtitle: when.join(' · ') || 'Any email',
+  };
 }

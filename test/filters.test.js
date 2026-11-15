@@ -37,7 +37,22 @@ test('sameFilter ignores id and array order', () => {
   assert.ok(!ctx.sameFilter(a, { criteria: { from: 'b' }, action: b.action }));
 });
 
-test('describeFilter reads like plain language', () => {
+test('summarizeFilter reads like plain language', () => {
   const f = { criteria: { from: 'a@b.com' }, action: { addLabelIds: ['Label_1'], removeLabelIds: ['INBOX'] } };
-  assert.strictEqual(ctx.describeFilter(f, { Label_1: 'Work' }), 'From: a@b.com → label Work, skip inbox');
+  assert.deepStrictEqual({ ...ctx.summarizeFilter(f, { Label_1: 'Work' }) }, {
+    title: 'Work · Skip inbox',
+    subtitle: 'From: a@b.com',
+  });
+});
+
+test('summarizeFilter shortens long real-world filters', () => {
+  const f = {
+    criteria: { from: '*@a.com | x@b.com | *@c.com | d@e.com', query: '(@w.com | @wc.com)' },
+    action: { addLabelIds: ['Label_9', 'CATEGORY_UPDATES'], removeLabelIds: ['SPAM'] },
+  };
+  assert.deepStrictEqual({ ...ctx.summarizeFilter(f, { Label_9: 'Reading/PM' }) }, {
+    title: 'Reading/PM · Updates tab · Never spam',
+    subtitle: 'From: @a.com, x@b.com +2 more · Has: @w.com, @wc.com',
+  });
+  assert.deepStrictEqual([...ctx.splitAlternatives('a@x.com OR b@y.com')], ['a@x.com', 'b@y.com']);
 });
