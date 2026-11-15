@@ -86,26 +86,37 @@
   .back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-left: -8px; padding: 6px 8px; border-radius: 16px; color: var(--accent); font-size: 13px; font-weight: 500; text-decoration: none; border: 0; background: none; }
   .edit h1 { margin: 0; font: 400 22px/28px Roboto, Arial, sans-serif; }
   .sub { font-size: 13px; color: var(--muted); }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
-  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .col h2 { margin: 0; font-size: 14px; font-weight: 500; }
+  .sect { display: flex; flex-direction: column; }
+  .sect h2 { margin: 0 0 4px; font-size: 14px; font-weight: 500; }
+  .frow { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 6px 24px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
+  .flabel { padding-top: 10px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .flabel .n { font-size: 12px; color: var(--faint); }
+  .fctl { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .fctl > input[type=text] { height: 40px; border: 1px solid var(--field); border-radius: 8px; padding: 0 12px; background: var(--surface); }
+  @media (max-width: 640px) { .frow { grid-template-columns: minmax(0, 1fr); } .flabel { padding-top: 0; } }
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field label { font-size: 12px; color: var(--muted); }
   .field input[type=text] { height: 40px; border: 1px solid var(--field); border-radius: 8px; padding: 0 12px; background: var(--surface); }
-  .checks { display: flex; flex-direction: column; gap: 2px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 4px 24px; padding-top: 2px; }
   .checks label { display: flex; align-items: center; gap: 12px; min-height: 36px; }
   .checks input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
-  .kept { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; background: var(--info); font-size: 13px; color: var(--muted); }
-  .kept b { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+  .kept { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
   .foot { position: sticky; bottom: 0; background: var(--bg); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 0 18px; border-top: 1px solid var(--line); }
   .foot .note { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); }
 
+  .sugg { position: absolute; z-index: 4; margin: 0; padding: 6px 0; list-style: none; background: var(--surface); border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3); max-height: 288px; overflow-y: auto; }
+  .sugg li { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; font-size: 14px; }
+  .sugg li .ms { font-size: 18px; color: var(--muted); }
+  .sugg li.person .ms { color: var(--person-icon); }
+  .sugg li[aria-selected=true], .sugg li:hover { background: var(--hover); }
+  .sugg li mark { background: none; color: inherit; font-weight: 500; }
   .toast { position: fixed; left: 24px; bottom: 24px; background: var(--toast); color: var(--on-toast); border-radius: 4px; padding: 14px 16px; max-width: calc(100% - 48px); box-shadow: 0 2px 6px rgba(0,0,0,.3); z-index: 5; }
   @media (max-width: 600px) { .bar, main { padding-left: 16px; padding-right: 16px; } .edit { padding: 12px 16px 0; } .k { min-width: 0; width: 100%; } }
 </style>
 </head>
 <body>
   <div id="app" aria-live="polite"><main><div class="skel"></div><div class="skel"></div><div class="skel"></div></main></div>
+  <ul class="sugg" id="sugg" role="listbox" aria-label="Suggestions" hidden></ul>
   <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
@@ -205,37 +216,42 @@
     render();
   }
 
+  /** One horizontal row: the label on the left, the control on the right (stacks on narrow screens). */
+  const frow = (label, forId, control) =>
+    '<div class="frow"><label class="flabel"' + (forId ? ' for="' + forId + '"' : '') + '>' + label + '</label><div class="fctl">' + control + '</div></div>';
+
   function renderEdit() {
     const E = ui.edit, v = E.values, isNew = !E.id;
     const from = E.senders === null
-      ? '<div class="field"><label for="e-from">From</label><input type="text" id="e-from" name="from" value="' + esc(E.rawFrom || '') + '"><span class="sub">This rule uses Gmail search syntax, so it’s edited as text.</span></div>'
-      : '<div class="field"><label for="e-add">From any of these' + (E.senders.length ? ' · ' + E.senders.length : '') + '</label>' +
-        '<div class="tagbox" data-act="focus-add">' +
-          E.senders.map((s, i) => '<span class="tag' + (isDomainSender(s) ? '' : ' person') + '"><span class="ms" aria-hidden="true">' + tagIcon(s) + '</span>' + esc(tagText(s)) +
-            '<button type="button" class="x" data-act="rm" data-i="' + i + '" aria-label="Remove ' + esc(senderLabel(s)) + '"><span class="ms" aria-hidden="true">close</span></button></span>').join('') +
-          E.bad.map((b, i) => '<button type="button" class="tag bad" data-act="fix" data-i="' + i + '" title="Click to fix"><span class="ms" aria-hidden="true">error</span>' + esc(b) + '</button>').join('') +
-          '<input id="e-add" type="text" autocomplete="off" placeholder="' + (E.senders.length ? 'Add more' : 'Add address or domain, or paste a list') + '">' +
-        '</div>' +
-        E.messages.map((m) => '<div class="msg ' + (/^Skipped/.test(m) ? 'info' : 'err') + '"><span class="ms" aria-hidden="true">' + (/^Skipped/.test(m) ? 'info' : 'error') + '</span><span>' + esc(m) + '</span></div>').join('') +
-        '<ul class="hints"><li><span class="ms" aria-hidden="true">domain</span><span>Use <b>domain.com</b> to select all emails from the domain</span></li>' +
-        '<li><span class="ms" aria-hidden="true" style="color: var(--person-icon)">person</span><span>Use <b>mail@domain.com</b> to add a particular email</span></li>' +
-        '<li><span class="ms" aria-hidden="true">keyboard_return</span><span>Enter or a comma adds it. Backspace removes the last one.</span></li></ul></div>';
+      ? frow('From', 'e-from', '<input type="text" id="e-from" name="from" value="' + esc(E.rawFrom || '') + '"><span class="sub">This rule uses Gmail search syntax, so it’s edited as text.</span>')
+      : frow('From any of these' + (E.senders.length ? ' <span class="n">' + E.senders.length + '</span>' : ''), 'e-add',
+          '<div class="tagbox" data-act="focus-add">' +
+            E.senders.map((s, i) => '<span class="tag' + (isDomainSender(s) ? '' : ' person') + '"><span class="ms" aria-hidden="true">' + tagIcon(s) + '</span>' + esc(tagText(s)) +
+              '<button type="button" class="x" data-act="rm" data-i="' + i + '" aria-label="Remove ' + esc(senderLabel(s)) + '"><span class="ms" aria-hidden="true">close</span></button></span>').join('') +
+            E.bad.map((b, i) => '<button type="button" class="tag bad" data-act="fix" data-i="' + i + '" title="Click to fix"><span class="ms" aria-hidden="true">error</span>' + esc(b) + '</button>').join('') +
+            '<input id="e-add" type="text" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" placeholder="' + (E.senders.length ? 'Add more' : 'Add address or domain, or paste a list') + '">' +
+          '</div>' +
+          E.messages.map((m) => '<div class="msg ' + (/^Skipped/.test(m) ? 'info' : 'err') + '"><span class="ms" aria-hidden="true">' + (/^Skipped/.test(m) ? 'info' : 'error') + '</span><span>' + esc(m) + '</span></div>').join('') +
+          '<ul class="hints"><li><span class="ms" aria-hidden="true">domain</span><span>Use <b>domain.com</b> to select all emails from the domain</span></li>' +
+          '<li><span class="ms" aria-hidden="true" style="color: var(--person-icon)">person</span><span>Use <b>mail@domain.com</b> to add a particular email</span></li>' +
+          '<li><span class="ms" aria-hidden="true">keyboard_return</span><span>Enter or a comma adds it. Backspace removes the last one.</span></li></ul>');
 
+    const placeholders = { subject: 'Any subject', query: 'Any words', negatedQuery: 'Nothing excluded', to: 'Anyone' };
     const fields = ['subject', 'query', 'negatedQuery'].concat(E.showTo ? ['to'] : []).map((k) =>
-      '<div class="field"><label for="e-' + k + '">' + esc(data.fields[k]) + '</label><input type="text" id="e-' + k + '" name="' + k + '" value="' + esc(v[k] || '') + '" placeholder="' + (k === 'negatedQuery' ? 'Nothing excluded' : k === 'subject' ? 'Any subject' : 'Any words') + '"></div>').join('');
+      frow(esc(data.fields[k].replace(/^And the subject contains$/, 'Subject contains')), 'e-' + k,
+        '<input type="text" id="e-' + k + '" name="' + k + '" value="' + esc(v[k] || '') + '" placeholder="' + placeholders[k] + '">')).join('');
 
     const kept = E.kept.criteria.concat(E.kept.actions);
     $('app').innerHTML =
       '<form class="edit" id="editForm" novalidate>' +
         '<div style="display:flex;flex-direction:column;gap:4px"><button type="button" class="back" data-act="to-list"><span class="ms" aria-hidden="true">arrow_back</span>All filters</button>' +
         '<h1>' + (isNew ? 'New filter' : 'Edit filter') + '</h1><span class="sub">' + (isNew ? 'Add who it’s from, what it does, or both' : 'Saving replaces the filter with the new version') + '</span></div>' +
-        '<div class="cols"><section class="col"><h2>Match emails</h2>' + from + fields + '</section>' +
-        '<section class="col"><h2>Then</h2>' +
-          '<div class="field"><label for="e-label">Apply label</label><input type="text" id="e-label" name="label" list="labels" value="' + esc(v.label || '') + '" placeholder="Pick one or type a new name"></div>' +
-          '<datalist id="labels">' + data.labels.map((l) => '<option value="' + esc(l) + '">').join('') + '</datalist>' +
-          '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + ((v.actions || []).includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>' +
-          (kept.length ? '<div class="kept"><b><span class="ms" aria-hidden="true" style="font-size:16px">lock</span>Kept as is</b>' + kept.map((k) => '<span>' + esc(k) + '</span>').join('') + '<span style="font-size:12px;color:var(--faint)">This form doesn’t edit these, and saving won’t change them.</span></div>' : '') +
-        '</section></div>' +
+        '<section class="sect"><h2>Match emails</h2>' + from + fields + '</section>' +
+        '<section class="sect"><h2>Then</h2>' +
+          frow('Apply label', 'e-label', '<input type="text" id="e-label" name="label" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" value="' + esc(v.label || '') + '" placeholder="Pick one or type a new name">') +
+          frow('Also', '', '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + ((v.actions || []).includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>') +
+          (kept.length ? frow('<span class="ms" aria-hidden="true" style="font-size:16px">lock</span> Kept as is', '', '<div class="kept">' + kept.map((k) => '<span class="tag">' + esc(k) + '</span>').join('') + '<span class="sub" style="flex-basis:100%">This form doesn’t edit these, and saving won’t change them.</span></div>') : '') +
+        '</section>' +
         (E.error ? '<div class="msg err" role="alert"><span class="ms" aria-hidden="true">error</span><span>' + esc(E.error) + '</span></div>' : '') +
         '<div class="foot"><span class="note"><span class="ms" aria-hidden="true" style="font-size:16px">sync</span>The side panel refreshes when you close this window</span>' +
         '<span style="display:flex;gap:8px"><button type="button" class="btn text" data-act="to-list">Cancel</button><button type="submit" class="btn primary"' + (E.saving ? ' disabled' : '') + '>' + (E.saving ? 'Saving…' : isNew ? 'Create filter' : 'Save changes') + '</button></span></div>' +
@@ -266,7 +282,85 @@
     if (focusAdd && $('e-add')) $('e-add').focus();
   }
 
+  // ---------- autocomplete: senders from your other filters, and your labels ----------
+
+  const sg = { input: null, items: [], active: -1 };
+
+  function knownSenders() {
+    const all = new Set();
+    data.filters.forEach((f) => (f.senders || []).forEach((s) => all.add(s)));
+    return [...all].sort((a, b) => tagText(a).localeCompare(tagText(b)));
+  }
+
+  /** What the field is currently typing: for the tag field, only the text after the last comma. */
+  const sgQuery = (input) => (input.id === 'e-add' ? input.value.split(/[,;\n|]/).pop() : input.value).trim().toLowerCase().replace(/^\*?@/, '');
+
+  function showSugg(input) {
+    let items;
+    if (input.id === 'e-add') items = knownSenders().filter((s) => !ui.edit.senders.includes(s)).map((s) => ({ value: s, text: tagText(s), icon: tagIcon(s), person: !isDomainSender(s) }));
+    else if (input.id === 'e-label') items = data.labels.map((l) => ({ value: l, text: l, icon: 'label' }));
+    else return hideSugg();
+    const q = sgQuery(input);
+    items = items.filter((x) => !q || x.text.toLowerCase().includes(q));
+    if (input.id === 'e-label' && items.length === 1 && items[0].text === input.value) items = [];
+    sg.input = input; sg.items = items.slice(0, 8); sg.active = -1;
+    const box = $('sugg');
+    if (!sg.items.length) return hideSugg();
+    box.innerHTML = sg.items.map((x, i) => {
+      const t = esc(x.text), at = q ? x.text.toLowerCase().indexOf(q) : -1;
+      const shown = at < 0 ? t : esc(x.text.slice(0, at)) + '<mark>' + esc(x.text.slice(at, at + q.length)) + '</mark>' + esc(x.text.slice(at + q.length));
+      return '<li role="option" id="sg-' + i + '" data-i="' + i + '" aria-selected="false"' + (x.person ? ' class="person"' : '') + '><span class="ms" aria-hidden="true">' + x.icon + '</span>' + shown + '</li>';
+    }).join('');
+    const r = input.getBoundingClientRect(), anchor = input.closest('.tagbox') || input;
+    const a = anchor.getBoundingClientRect();
+    box.style.left = a.left + window.scrollX + 'px';
+    box.style.top = r.bottom + window.scrollY + 4 + 'px';
+    box.style.width = a.width + 'px';
+    box.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+
+  function hideSugg() {
+    $('sugg').hidden = true;
+    if (sg.input) { sg.input.setAttribute('aria-expanded', 'false'); sg.input.removeAttribute('aria-activedescendant'); }
+    sg.items = []; sg.active = -1;
+  }
+
+  function moveSugg(step) {
+    sg.active = (sg.active + step + sg.items.length) % sg.items.length;
+    [...$('sugg').children].forEach((li, i) => li.setAttribute('aria-selected', String(i === sg.active)));
+    sg.input.setAttribute('aria-activedescendant', 'sg-' + sg.active);
+    $('sg-' + sg.active).scrollIntoView({ block: 'nearest' });
+  }
+
+  function pickSugg(i) {
+    const x = sg.items[i], input = sg.input;
+    hideSugg();
+    if (input.id === 'e-label') { input.value = x.value; ui.edit.values.label = x.value; return; }
+    // Tag field: whatever was typed before the last comma is still added, then the picked sender.
+    const before = input.value.split(/[,;\n|]/).slice(0, -1).join(',');
+    input.value = '';
+    commitAdd((before ? before + ',' : '') + x.value);
+    redrawEdit(true);
+  }
+
+  document.addEventListener('focusin', (ev) => { if (ev.target.id === 'e-add' || ev.target.id === 'e-label') showSugg(ev.target); });
+  document.addEventListener('focusout', (ev) => { if (ev.target === sg.input) setTimeout(() => { if (document.activeElement !== sg.input) hideSugg(); }, 0); });
+  document.addEventListener('input', (ev) => { if (ev.target.id === 'e-add' || ev.target.id === 'e-label') showSugg(ev.target); });
+  $('sugg').addEventListener('mousedown', (ev) => {
+    ev.preventDefault(); // keep focus in the field
+    const li = ev.target.closest('li'); if (li) pickSugg(Number(li.dataset.i));
+  });
+  window.addEventListener('resize', hideSugg);
+
   document.addEventListener('keydown', (ev) => {
+    if (sg.items.length && ev.target === sg.input) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); moveSugg(1); return; }
+      if (ev.key === 'ArrowUp') { ev.preventDefault(); moveSugg(-1); return; }
+      if (ev.key === 'Escape') { ev.preventDefault(); hideSugg(); return; }
+      if ((ev.key === 'Enter' || ev.key === 'Tab') && sg.active >= 0) { ev.preventDefault(); pickSugg(sg.active); return; }
+    }
+    if (ev.target.id === 'e-label' && ev.key === 'Enter') ev.preventDefault(); // Enter in the label field shouldn't submit the form
     if (ev.target.id !== 'e-add') return;
     const input = ev.target;
     if (ev.key === 'Enter' || ev.key === ',') {
