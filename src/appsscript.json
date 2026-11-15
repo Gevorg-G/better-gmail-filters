@@ -13,6 +13,10 @@
     "https://www.googleapis.com/auth/gmail.settings.basic",
     "https://www.googleapis.com/auth/gmail.labels"
   ],
+  "webapp": {
+    "executeAs": "USER_ACCESSING",
+    "access": "MYSELF"
+  },
   "addOns": {
     "common": {
       "name": "Better Gmail Filters",

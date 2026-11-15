@@ -16,10 +16,32 @@ test('parseAddress handles display names and bare addresses', () => {
 });
 
 test('filterError requires criteria and an action', () => {
-  assert.match(ctx.filterError({ from: '', subject: '', label: 'A', actions: [] }), /From or Subject/);
-  assert.match(ctx.filterError({ from: 'a@b', subject: '', label: '', actions: [] }), /label or/);
-  assert.match(ctx.filterError({ from: 'x'.repeat(1501), subject: '', label: 'A', actions: [] }), /too long/);
-  assert.strictEqual(ctx.filterError({ from: 'a@b', subject: '', label: '', actions: ['star'] }), null);
+  const err = (spec, label) => ctx.filterError(ctx.buildFilter({ actions: [], ...spec }, label || null));
+  assert.match(err({ from: '', subject: '' }, 'L'), /at least one condition/);
+  assert.match(err({ from: 'a@b' }), /label or/);
+  assert.match(err({ from: 'x'.repeat(1501) }, 'L'), /too long/);
+  assert.strictEqual(err({ from: 'a@b', actions: ['star'] }), null);
+});
+
+test('applyEdits keeps what the form does not show', () => {
+  const old = {
+    id: 'f1',
+    criteria: { from: 'a@x.com', query: 'invoice', hasAttachment: true },
+    action: { addLabelIds: ['Label_1', 'CATEGORY_UPDATES', 'Label_2', 'STARRED'], removeLabelIds: ['INBOX'], forward: 'me@y.com' },
+  };
+  const values = ctx.formValues(old, { Label_1: 'Work' });
+  assert.strictEqual(values.label, 'Work');
+  assert.deepStrictEqual([...values.actions].sort(), ['skipInbox', 'star']);
+
+  // Change the sender and the label, untick star, tick mark read.
+  const next = ctx.applyEdits(old, { ...values, from: '@x.com', actions: ['skipInbox', 'markRead'] }, 'Label_3');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(next)), {
+    criteria: { from: '@x.com', query: 'invoice', hasAttachment: true },
+    action: { addLabelIds: ['Label_3', 'CATEGORY_UPDATES', 'Label_2'], removeLabelIds: ['INBOX', 'UNREAD'], forward: 'me@y.com' },
+  });
+
+  // Saving the form unchanged gives back the same filter.
+  assert.ok(ctx.sameFilter(old, ctx.applyEdits(old, values, 'Label_1')));
 });
 
 test('buildFilter maps actions to Gmail label changes', () => {

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0&display=block">
+<style>
+  /* Gmail-native: same canvas, pill search, rounded white groups, blue accent, dark snackbar */
+  :root {
+    --bg: #f6f8fc; --surface: #ffffff; --fg: #1f1f1f; --muted: #444746; --faint: #747775;
+    --line: #e1e3e1; --chip: #e9eef6; --hover: #f2f6fc; --accent: #0b57d0; --on-accent: #ffffff;
+    --danger: #b3261e; --danger-soft: #fce8e6; --toast: #303030; --on-toast: #f2f2f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111111; --surface: #1e1f20; --fg: #e3e3e3; --muted: #c4c7c5; --faint: #8e918f;
+      --line: #3c4043; --chip: #2d2f31; --hover: #282a2c; --accent: #a8c7fa; --on-accent: #062e6f;
+      --danger: #f2b8b5; --danger-soft: #3c1f1e; --toast: #e3e3e3; --on-toast: #1f1f1f; color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px Roboto, Arial, sans-serif; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ms { font-family: 'Material Symbols Outlined'; font-size: 20px; line-height: 1; vertical-align: middle; user-select: none; }
+  .bar { position: sticky; top: 0; z-index: 2; background: var(--bg); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px; }
+  .bar h1 { font: 400 22px/28px Roboto, Arial, sans-serif; margin: 0; }
+  .count { color: var(--muted); font-size: 13px; }
+  .search { flex: 1; min-width: 220px; max-width: 720px; display: flex; align-items: center; gap: 12px; background: var(--chip); border-radius: 24px; padding: 0 16px; height: 48px; }
+  .search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; min-width: 0; }
+  .icon-btn { border: 0; background: none; width: 40px; height: 40px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--muted); }
+  .icon-btn:hover { background: var(--hover); }
+  main { padding: 0 24px 96px; display: flex; flex-direction: column; gap: 16px; max-width: 1100px; }
+  .group { background: var(--surface); border-radius: 16px; overflow: hidden; }
+  .ghead { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; font-weight: 500; }
+  .ghead .ms { color: var(--muted); }
+  .ghead .n { color: var(--faint); font-weight: 400; font-size: 13px; }
+  .row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); }
+  .row:hover { background: var(--hover); }
+  .row:hover .tools { opacity: 1; }
+  .crit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .k { color: var(--muted); font-size: 12px; min-width: 76px; }
+  .chip { background: var(--chip); border-radius: 8px; padding: 2px 8px; font-size: 13px; max-width: 100%; overflow-wrap: anywhere; }
+  .more { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 4px; }
+  .tools { display: flex; gap: 2px; opacity: .65; }
+  @media (hover: none) { .tools { opacity: 1; } }
+  .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--danger-soft); border-radius: 8px; padding: 8px 12px; color: var(--danger); }
+  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 20px; height: 36px; padding: 0 16px; font-weight: 500; color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+  form.edit { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; padding: 4px 0; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input { height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: var(--surface); }
+  .checks { display: flex; flex-wrap: wrap; gap: 4px 16px; grid-column: 1 / -1; }
+  .checks label { display: flex; align-items: center; gap: 6px; }
+  .checks input { accent-color: var(--accent); width: 18px; height: 18px; }
+  .note { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
+  .err { grid-column: 1 / -1; color: var(--danger); font-size: 13px; }
+  .actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+  .empty { background: var(--surface); border-radius: 16px; padding: 40px 24px; text-align: center; color: var(--muted); }
+  .skel { height: 64px; border-radius: 16px; background: var(--surface); opacity: .6; }
+  .toast { position: fixed; left: 24px; bottom: 24px; background: var(--toast); color: var(--on-toast); border-radius: 4px; padding: 14px 16px; max-width: calc(100% - 48px); box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+  [hidden] { display: none !important; }
+  @media (max-width: 600px) { .bar, main { padding-left: 16px; padding-right: 16px; } .k { min-width: 0; width: 100%; } }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <h1>Your filters</h1>
+    <span class="count" id="count"></span>
+    <label class="search"><span class="ms" aria-hidden="true">search</span><input id="q" type="search" placeholder="Search senders, words or labels" aria-label="Search filters"></label>
+    <button class="icon-btn" id="refresh" aria-label="Refresh" title="Refresh"><span class="ms">refresh</span></button>
+  </header>
+  <main id="list" aria-live="polite">
+    <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+  </main>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+  const FIELDS = [['from', 'From'], ['to', 'To'], ['subject', 'Subject contains'], ['query', 'Has the words'], ['negatedQuery', "Doesn't have"]];
+  const MAX = 1000;
+  let data = null;
+  const ui = { open: {}, editing: null, deleting: null, error: '' };
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const $ = (id) => document.getElementById(id);
+
+  function load() {
+    google.script.run
+      .withSuccessHandler((d) => { data = d; render(); })
+      .withFailureHandler((e) => { $('list').innerHTML = '<div class="empty">Couldn\'t load your filters: ' + esc(e.message) + '</div>'; })
+      .managerData();
+  }
+
+  let toastTimer;
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 4000);
+  }
+
+  function matches(f, q) {
+    if (!q) return true;
+    const hay = [f.summary.title, f.summary.subtitle].concat(...f.criteria.map((c) => c.values), f.actions).join(' ').toLowerCase();
+    return q.split(/\s+/).every((w) => hay.includes(w));
+  }
+
+  function render() {
+    const q = $('q').value.trim().toLowerCase();
+    const shown = data.filters.filter((f) => matches(f, q));
+    $('count').textContent = data.filters.length + ' of ' + MAX.toLocaleString();
+
+    if (!data.filters.length) { $('list').innerHTML = '<div class="empty">No filters yet. Open an email in Gmail and create one from the side panel.</div>'; return; }
+    if (!shown.length) { $('list').innerHTML = '<div class="empty">No filters match “' + esc(q) + '”.</div>'; return; }
+
+    const groups = new Map();
+    shown.forEach((f) => { const k = f.summary.title; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); });
+    $('list').innerHTML = [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((title) => {
+      const fs = groups.get(title);
+      return '<section class="group"><div class="ghead"><span class="ms" aria-hidden="true">' + esc(fs[0].icon) + '</span><span>' + esc(title) +
+        '</span><span class="n">' + fs.length + (fs.length > 1 ? ' filters' : ' filter') + '</span></div>' + fs.map(rowHTML).join('') + '</section>';
+    }).join('');
+  }
+
+  function rowHTML(f) {
+    if (ui.editing === f.id) return '<div class="row">' + formHTML(f) + '</div>';
+    const crit = f.criteria.map((c) => {
+      const limit = ui.open[f.id] ? Infinity : 6;
+      const chips = c.values.slice(0, limit).map((v) => '<span class="chip">' + esc(v) + '</span>').join('');
+      const extra = c.values.length > limit ? '<button class="more" data-act="more" data-id="' + f.id + '">+' + (c.values.length - limit) + ' more</button>' : '';
+      return '<div class="line"><span class="k">' + esc(c.name) + '</span>' + (chips || '<span class="chip">Yes</span>') + extra + '</div>';
+    }).join('');
+    const tail = ui.deleting === f.id
+      ? '<div class="confirm">Delete this filter? This can\'t be undone. <button class="btn danger" data-act="del-yes" data-id="' + f.id + '">Delete</button><button class="btn" data-act="del-no">Cancel</button></div>'
+      : '<div class="tools"><button class="icon-btn" data-act="edit" data-id="' + f.id + '" aria-label="Edit filter" title="Edit"><span class="ms">edit</span></button>' +
+        '<button class="icon-btn" data-act="del" data-id="' + f.id + '" aria-label="Delete filter" title="Delete"><span class="ms">delete</span></button></div>';
+    return '<div class="row"><div class="crit">' + crit + '</div>' + tail + '</div>';
+  }
+
+  function formHTML(f) {
+    const v = f.values;
+    const fields = FIELDS.filter(([k]) => k === 'from' || k === 'subject' || v[k]);
+    return '<form class="edit" data-id="' + f.id + '" data-fields="' + fields.map(([k]) => k).join(',') + '">' +
+      fields.map(([k, t]) => '<div class="field"><label for="e-' + k + '">' + t + '</label><input id="e-' + k + '" name="' + k + '" value="' + esc(v[k]) + '"></div>').join('') +
+      '<div class="field"><label for="e-label">Apply label</label><input id="e-label" name="label" list="labels" value="' + esc(v.label) + '" placeholder="No label"></div>' +
+      '<datalist id="labels">' + data.labels.map((l) => '<option value="' + esc(l) + '">').join('') + '</datalist>' +
+      '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + (v.actions.includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>' +
+      '<p class="note">Saving replaces the filter with the new version. Parts this form doesn\'t show, like inbox tabs or extra labels, stay as they are.</p>' +
+      (ui.error ? '<p class="err" role="alert">' + esc(ui.error) + '</p>' : '') +
+      '<div class="actions"><button class="btn primary" type="submit">Save changes</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
+  }
+
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-act]'); if (!b) return;
+    const id = b.dataset.id;
+    switch (b.dataset.act) {
+      case 'more': ui.open[id] = true; break;
+      case 'edit': ui.editing = id; ui.deleting = null; ui.error = ''; break;
+      case 'cancel': ui.editing = null; ui.error = ''; break;
+      case 'del': ui.deleting = id; ui.editing = null; break;
+      case 'del-no': ui.deleting = null; break;
+      case 'del-yes':
+        b.disabled = true;
+        google.script.run
+          .withSuccessHandler((msg) => { ui.deleting = null; toast(msg); load(); })
+          .withFailureHandler((e) => { ui.deleting = null; toast("Couldn't delete the filter: " + e.message); render(); })
+          .managerDelete(id);
+        return;
+      default: return;
+    }
+    render();
+  });
+
+  document.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const form = ev.target;
+    const spec = { label: form.label.value.trim(), actions: [...form.querySelectorAll('input[name=actions]:checked')].map((x) => x.value) };
+    form.dataset.fields.split(',').forEach((k) => (spec[k] = form[k].value.trim()));
+    form.querySelector('[type=submit]').disabled = true;
+    google.script.run
+      .withSuccessHandler((msg) => { ui.editing = null; ui.error = ''; toast(msg); load(); })
+      .withFailureHandler((e) => { ui.error = e.message.replace(/^Exception: /, ''); render(); })
+      .managerSave(form.dataset.id, spec);
+  });
+
+  $('q').addEventListener('input', () => data && render());
+  $('refresh').addEventListener('click', load);
+  load();
+</script>
+</body>
+</html>

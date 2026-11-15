@@ -58,6 +58,16 @@ Test deployments always run the latest pushed code, so reload Gmail after pushin
 node --test
 ```
 
+## Full view
+
+The homepage card's **Open full view** button opens `src/manager.html` in a popup (an Apps Script web app served by `doGet`). It shows the same filters with search, grouping by destination, and inline edit and delete. It uses the same scopes as the add-on.
+
+The web app needs a deployment once: `clasp create-deployment --description "Full view web app"`. While testing, the button opens the `/dev` URL, which always runs the latest pushed code but only opens for the script's editors. The manifest sets web app access to `MYSELF`. Widen it before inviting testers.
+
+## Editing filters
+
+Gmail has no "update" for filters, so saving an edit creates the new version first and deletes the old one only after that succeeds. Parts of a filter the form doesn't show (inbox tabs, extra labels, size or attachment conditions, forwarding) are kept as they are.
+
 ## Testers
 
 Share the Apps Script project with each tester with **Editor** access. Testers then install it from Deploy → Test deployments. In the Cloud project, also add each tester under OAuth consent screen → Test users.
