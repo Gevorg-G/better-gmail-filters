@@ -14,8 +14,7 @@ const OTHER_FIELDS = {
   negatedQuery: "Doesn't have",
 };
 
-const DOMAIN_HINT = 'Use <b>domain.com</b> to select all emails from the domain';
-const ADDRESS_HINT = 'Use <b>mail@domain.com</b> to add a particular email';
+const ADD_HINT = 'Use domain.com to select all emails from the domain, or mail@domain.com to add a particular email. Press Enter to add.';
 
 // ---------- The filter form (create, new, edit) ----------
 // Cards keep no state between clicks, so every action carries `ctx`: the senders so far and how to redraw the form.
@@ -104,14 +103,19 @@ function filterFormCard(ctx, v, messages) {
       from.addWidget(chips);
     }
 
-    from
-      .addWidget(CardService.newTextInput().setFieldName('add').setTitle('Add address or domain').setValue(v.add || ''))
-      .addWidget(CardService.newTextButton().setText('Add').setOnClickAction(formAction('onAddSenders', ctx)));
+    // No Add button: the field adds what's typed when you press Enter or leave it. The hints sit in its own small hint text.
+    from.addWidget(
+      CardService.newTextInput()
+        .setFieldName('add')
+        .setTitle(ctx.senders.length ? 'Add more' : 'Add address or domain')
+        .setValue(v.add || '')
+        .setHint(ADD_HINT)
+        .setOnChangeAction(formAction('onAddSenders', ctx))
+    );
     messages.forEach((m) => {
       const color = /^Skipped/.test(m) ? '#444746' : '#b3261e';
       from.addWidget(CardService.newTextParagraph().setText('<font color="' + color + '">' + escapeHtml(m) + '</font>'));
     });
-    from.addWidget(decorated('domain', '', DOMAIN_HINT)).addWidget(decorated('person', '', ADDRESS_HINT));
   }
 
   const match = CardService.newCardSection();
@@ -141,10 +145,11 @@ function filterFormCard(ctx, v, messages) {
   }
 
   const footer = CardService.newFixedFooter().setPrimaryButton(
-    filledButton(ctx.mode === 'edit' ? 'Save changes' : 'Create filter', formAction('onSaveFilter', ctx))
+    filledButton(ctx.mode === 'edit' ? 'Save' : 'Create', formAction('onSaveFilter', ctx))
   );
   const popup = ctx.mode === 'edit' ? { view: 'edit', id: ctx.id } : { view: 'new', from: ctx.senders.join(',') };
-  footer.setSecondaryButton(overlayButton('Larger window', popupUrl(popup)));
+  // Short labels keep both footer buttons on one row in the narrow panel.
+  footer.setSecondaryButton(overlayButton('Expand', popupUrl(popup)));
 
   return CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle(titles[ctx.mode]).setSubtitle(ctx.subtitle || ''))
@@ -178,7 +183,7 @@ function redraw(ctx, v, messages) {
 function onAddSenders(e) {
   const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
   const v = readForm(e, ctx);
-  if (!v.add) return redraw(ctx, v, ['Type an address or domain first.']);
+  if (!v.add) return redraw(ctx, v, []); // leaving an empty field isn't an error
   const r = parseSenders(v.add, ctx.senders);
   ctx.senders = ctx.senders.concat(r.added);
   v.add = r.bad.join(', '); // only what needs fixing stays in the field
