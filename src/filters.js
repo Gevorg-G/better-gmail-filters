@@ -85,9 +85,9 @@ function sendersFromCriteria(from) {
 function sendersToFrom(senders, originalFrom) {
   const before = sendersFromCriteria(originalFrom || '');
   const same = before && before.length === senders.length && senders.every((s) => before.indexOf(s) !== -1);
-  // A domain is written as *@x.com, Gmail's own form. Inside from: it matches the same senders as a bare x.com
-  // (subdomains included), but it reads unambiguously as "anyone at x.com".
-  return same ? originalFrom || '' : senders.map((s) => (isDomainSender(s) ? '*' + s : s)).join(' | ');
+  // A domain is written bare (x.com). Inside from: it matches the same senders as *@x.com, subdomains included
+  // (checked against real mail), and it's shorter.
+  return same ? originalFrom || '' : senders.map((s) => (isDomainSender(s) ? s.slice(1) : s)).join(' | ');
 }
 
 // Criteria the forms can edit. Anything else on a filter (size, attachments, categories, forwarding,
