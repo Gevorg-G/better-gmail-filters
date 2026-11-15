@@ -362,10 +362,12 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+// ScriptApp.getService().getUrl() returns an ID that 404s when called from the add-on, so the URL is set here.
+// shortcut: this is the HEAD deployment's /dev URL (latest pushed code, editors only); switch to a versioned /exec URL when publishing.
+const FULL_VIEW_URL = 'https://script.google.com/macros/s/AKfycbxi1gHaR5HU1UcOxmZWDXMKOePCxFp0MR1WYV0Aaek/dev';
+
 function fullViewUrl() {
-  const url = ScriptApp.getService().getUrl();
-  // shortcut: /dev always runs the latest pushed code but only opens for the script's editors; use /exec when publishing.
-  return url ? url.replace(/\/exec$/, '/dev') : null;
+  return FULL_VIEW_URL;
 }
 
 /** Everything the full view needs in one call. */
