@@ -59,6 +59,7 @@
   .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .k { color: var(--muted); font-size: 12px; min-width: 76px; }
   .val { font-size: 13px; overflow-wrap: anywhere; }
+  .or { font-size: 12px; color: var(--faint); }
   .more { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 4px; }
   .tools { display: flex; gap: 2px; }
   .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--danger-soft); border-radius: 8px; padding: 8px 12px; color: var(--danger); }
@@ -197,6 +198,9 @@
       const extra = f.senders.length > limit ? '<button class="more" data-act="more" data-id="' + f.id + '">+' + (f.senders.length - limit) + ' more</button>' : '';
       lines.push('<div class="line"><span class="k">From</span>' + tags + extra + '</div>');
     }
+    if (f.subjectTerms && f.subjectTerms.length) {
+      lines.push('<div class="line"><span class="k">Subject has</span>' + f.subjectTerms.map((t) => '<span class="tag"><span class="ms" aria-hidden="true">short_text</span>' + esc(t) + '</span>').join('<span class="or">or</span>') + '</div>');
+    }
     f.criteria.forEach((c) => lines.push('<div class="line"><span class="k">' + esc(c.name) + '</span><span class="val">' + (c.values.map(esc).join(', ') || 'Yes') + '</span></div>'));
     const tail = ui.deleting === f.id
       ? '<div class="confirm">Delete this filter? This can’t be undone. <button class="btn danger" data-act="del-yes" data-id="' + f.id + '">Delete</button><button class="btn" data-act="del-no">Cancel</button></div>'
@@ -207,7 +211,7 @@
 
   // ---------- edit view (its own screen, never in place) ----------
 
-  function startEdit(id, from) {
+  function startEdit(id, from, subjectHint) {
     const f = id && data.filters.find((x) => x.id === id);
     if (id && !f) { ui.view = 'list'; toast('That filter no longer exists.'); render(); return; }
     const v = f ? f.values : { subject: '', to: '', query: '', negatedQuery: '', label: '', actions: [] };
@@ -219,6 +223,8 @@
       values: Object.assign({}, v),
       kept: f ? f.kept : { criteria: [], actions: [] },
       showTo: !!v.to, // To is shown only when the filter uses it; once shown, clearing it must still be saved
+      terms: f ? (f.subjectTerms ? f.subjectTerms.slice() : null) : [], // null: subject uses syntax tags can't show
+      subjectHint: subjectHint || '',
 
       bad: [], messages: [], error: '', saving: false,
     };
@@ -246,8 +252,19 @@
           '<li><span class="ms" aria-hidden="true" style="color: var(--person-icon)">person</span><span>Use <b>mail@domain.com</b> to add a particular email</span></li>' +
           '<li><span class="ms" aria-hidden="true">keyboard_return</span><span>Enter or a comma adds it. Backspace removes the last one.</span></li></ul>');
 
+    const subjRow = E.terms === null
+      ? frow('Subject contains', 'e-subject', '<input type="text" id="e-subject" name="subject" value="' + esc(v.subject || '') + '"><span class="sub">This rule uses Gmail search syntax, so it’s edited as text.</span>')
+      : frow('Subject has any of' + (E.terms.length ? ' <span class="n">' + E.terms.length + '</span>' : ''), 'e-subj',
+          '<div class="tagbox" data-act="focus-subj">' +
+            E.terms.map((t, i) => '<span class="tag"><span class="ms" aria-hidden="true">short_text</span>' + esc(t) +
+              '<button type="button" class="x" data-act="rm-subj" data-i="' + i + '" aria-label="Remove ' + esc(t) + '"><span class="ms" aria-hidden="true">close</span></button></span>').join('<span class="or">or</span>') +
+            '<input id="e-subj" type="text" autocomplete="off" placeholder="' + (E.terms.length ? 'Add another word or phrase' : 'Any subject') + '">' +
+          '</div>' +
+          (E.subjectHint && !E.terms.some((t) => t.toLowerCase() === E.subjectHint.toLowerCase())
+            ? '<div><button type="button" class="more" data-act="subj-hint"><span class="ms" aria-hidden="true" style="font-size:16px">add</span> Use this email’s subject: “' + esc(E.subjectHint) + '”</button></div>' : '') +
+          '<ul class="hints"><li><span class="ms" aria-hidden="true">short_text</span><span>An email matches if its subject has <b>any</b> of these words or phrases. Enter adds one.</span></li></ul>');
     const placeholders = { subject: 'Any subject', query: 'Any words', negatedQuery: 'Nothing excluded', to: 'Anyone' };
-    const fields = ['subject', 'query', 'negatedQuery'].concat(E.showTo ? ['to'] : []).map((k) =>
+    const fields = subjRow + ['query', 'negatedQuery'].concat(E.showTo ? ['to'] : []).map((k) =>
       frow(esc(data.fields[k].replace(/^And the subject contains$/, 'Subject contains')), 'e-' + k,
         '<input type="text" id="e-' + k + '" name="' + k + '" value="' + esc(v[k] || '') + '" placeholder="' + placeholders[k] + '">')).join('');
 
@@ -289,7 +306,8 @@
 
   function redrawEdit(focusAdd) {
     captureValues(); renderEdit();
-    if (focusAdd && $('e-add')) $('e-add').focus();
+    const fid = focusAdd === true ? 'e-add' : focusAdd;
+    if (fid && $(fid)) $(fid).focus();
   }
 
   // ---------- autocomplete: senders from your other filters, and your labels ----------
@@ -373,6 +391,11 @@
       if ((ev.key === 'Enter' || ev.key === 'Tab') && sg.active >= 0) { ev.preventDefault(); pickSugg(sg.active); return; }
     }
     if (ev.target.id === 'e-label' && ev.key === 'Enter') ev.preventDefault(); // Enter in the label field shouldn't submit the form
+    if (ev.target.id === 'e-subj') {
+      if (ev.key === 'Enter') { ev.preventDefault(); const t = ev.target.value; ev.target.value = ''; if (addTerms(t)) redrawEdit('e-subj'); }
+      else if (ev.key === 'Backspace' && !ev.target.value && ui.edit.terms.length) { ui.edit.terms.pop(); redrawEdit('e-subj'); }
+      return;
+    }
     if (ev.target.id !== 'e-add') return;
     const input = ev.target;
     if (ev.key === 'Enter' || ev.key === ',') {
@@ -389,7 +412,20 @@
     const text = (ev.clipboardData || window.clipboardData).getData('text');
     if (commitAdd(ev.target.value + ' ' + text)) redrawEdit(true);
   });
+  /** Adds subject terms; "a OR b" or a quoted phrase may be typed or pasted. */
+  function addTerms(text) {
+    const t = text.trim(); if (!t) return false;
+    const parsed = subjectTerms(t);
+    const list = parsed && parsed.length > 1 ? parsed : [t.replace(/^"(.*)"$/, '$1')];
+    list.forEach((x) => { if (!ui.edit.terms.some((y) => y.toLowerCase() === x.toLowerCase())) ui.edit.terms.push(x); });
+    return true;
+  }
+
   document.addEventListener('focusout', (ev) => {
+    if (ev.target.id === 'e-subj' && ev.target.value.trim()) {
+      if (ev.relatedTarget && ev.relatedTarget.closest('.tagbox, button[type=submit]')) return;
+      const t = ev.target.value; ev.target.value = ''; if (addTerms(t)) redrawEdit(false); return;
+    }
     // Typing then clicking elsewhere still adds what was typed (but not when clicking a tag's own buttons).
     if (ev.target.id !== 'e-add' || !ev.target.value.trim()) return;
     if (ev.relatedTarget && ev.relatedTarget.closest('.tagbox, button[type=submit]')) return;
@@ -419,6 +455,9 @@
         return;
       case 'to-list': ui.view = 'list'; ui.edit = null; renderList(); return;
       case 'focus-add': if (ev.target === b && $('e-add')) $('e-add').focus(); return;
+      case 'focus-subj': if (ev.target === b && $('e-subj')) $('e-subj').focus(); return;
+      case 'rm-subj': ui.edit.terms.splice(Number(b.dataset.i), 1); redrawEdit('e-subj'); return;
+      case 'subj-hint': addTerms('"' + ui.edit.subjectHint + '"'); redrawEdit('e-subj'); return;
       case 'rm': ui.edit.senders.splice(Number(b.dataset.i), 1); ui.edit.messages = []; redrawEdit(true); return;
       case 'fix': {
         // A red tag goes back into the field to be corrected.
@@ -434,11 +473,13 @@
     const E = ui.edit;
     const pending = $('e-add') ? $('e-add').value : '';
     if (pending.trim()) { $('e-add').value = ''; commitAdd(pending); }
+    if ($('e-subj') && $('e-subj').value.trim()) { addTerms($('e-subj').value); $('e-subj').value = ''; }
     captureValues();
     if (E.bad.length) { E.error = 'Fix or remove the red entries first.'; renderEdit(); return; }
     const v = E.values;
-    const spec = { subject: v.subject.trim(), query: (v.query || '').trim(), negatedQuery: (v.negatedQuery || '').trim(), label: v.label.trim(), actions: v.actions };
+    const spec = { query: (v.query || '').trim(), negatedQuery: (v.negatedQuery || '').trim(), label: v.label.trim(), actions: v.actions };
     if (E.showTo) spec.to = (v.to || '').trim();
+    if (E.terms === null) spec.subject = (v.subject || '').trim(); else spec.subjectTerms = E.terms;
     if (E.senders === null) spec.from = (E.rawFrom || '').trim(); else spec.senders = E.senders;
     E.error = ''; E.saving = true; renderEdit();
     google.script.run
@@ -447,12 +488,12 @@
       .managerSave(E.id, spec);
   });
 
-  // Opened from the side panel: ?view=edit&id=… or ?view=new&from=a@x.com,@y.com
+  // Opened from the side panel: ?view=edit&id=… or ?view=new&from=a@x.com,@y.com&subject=…
   google.script.url.getLocation((loc) => {
     const p = loc.parameter || {};
     load(() => {
       if (p.view === 'edit' && p.id) startEdit(p.id);
-      else if (p.view === 'new') startEdit(null, p.from || '');
+      else if (p.view === 'new') startEdit(null, p.from || '', p.subject || '');
       else render();
     });
   });

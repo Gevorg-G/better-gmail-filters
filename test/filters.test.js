@@ -100,3 +100,20 @@ test('sendersFromCriteria and sendersToFrom round-trip without rewriting', () =>
   assert.strictEqual(ctx.sendersFromCriteria('-noreply@x.com'), null);
   assert.deepStrictEqual([...ctx.sendersFromCriteria('')], []);
 });
+
+test('subjectTerms reads OR lists and refuses ambiguous ones', () => {
+  assert.deepStrictEqual([...ctx.subjectTerms('(receipt OR invoice OR billing OR Квитанция)')], ['receipt', 'invoice', 'billing', 'Квитанция']);
+  assert.deepStrictEqual([...ctx.subjectTerms('("Payment Receipt" OR billing)')], ['Payment Receipt', 'billing']);
+  assert.deepStrictEqual([...ctx.subjectTerms('Your receipt from Apple.')], ['Your receipt from Apple.']);
+  assert.deepStrictEqual([...ctx.subjectTerms('')], []);
+  // Unquoted multi-word term inside OR is ambiguous (Gmail reads it as Payment AND (Receipt OR billing)).
+  assert.strictEqual(ctx.subjectTerms('(Payment Receipt OR billing)'), null);
+});
+
+test('termsToSubject quotes phrases and keeps unchanged text', () => {
+  assert.strictEqual(ctx.termsToSubject(['Payment Receipt', 'billing'], ''), '("Payment Receipt" OR billing)');
+  assert.strictEqual(ctx.termsToSubject(['invoice'], ''), 'invoice');
+  assert.strictEqual(ctx.termsToSubject([], 'x'), '');
+  const original = '(receipt OR invoice OR billing OR Квитанция)';
+  assert.strictEqual(ctx.termsToSubject(['Квитанция', 'receipt', 'billing', 'invoice'], original), original);
+});

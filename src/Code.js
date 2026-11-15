@@ -14,164 +14,190 @@ const OTHER_FIELDS = {
   negatedQuery: "Doesn't have",
 };
 
-const ADD_HINT = 'Use domain.com to select all emails from the domain, or mail@domain.com to add a particular email. Press Enter to add.';
 
 // ---------- The filter form (create, new, edit) ----------
 // Cards keep no state between clicks, so every action carries `ctx`: the senders so far and how to redraw the form.
 // Typed values (subject, label, checkboxes) come back in formInputs and are redrawn as they were.
 
+// Free mail providers: "anyone at gmail.com" is almost never what you want, so these default to the address.
+const FREE_MAIL = ['gmail.com', 'googlemail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com',
+  'aol.com', 'proton.me', 'protonmail.com', 'mail.ru', 'inbox.ru', 'bk.ru', 'list.ru', 'yandex.ru', 'ya.ru'];
+
+/** With an email open: add its sender to an existing filter in one tap. New filters are created in the popup. */
 function onGmailMessage(e) {
   GmailApp.setCurrentMessageAccessToken(e.gmail.accessToken);
   const msg = GmailApp.getMessageById(e.gmail.messageId);
-  const address = parseAddress(msg.getFrom());
+  const from = msg.getFrom();
+  const address = parseAddress(from);
   const domain = senderDomain(address);
-  const subject = msg.getSubject() || '';
-  const ctx = {
-    senders: normalizeSender(address) ? [address] : [],
-    subtitle: subject ? 'From “' + shorten(subject, 60) + '”' : 'From this email',
-    subjectSuggestion: subject,
-    suggestions: domain ? [{ label: 'Widen to ' + domain, value: '@' + domain, replace: address }] : [],
-  };
-  return filterFormCard(ctx, { subject: '', label: '', actions: [] }, []);
-}
-
-/** The quick "create from this email" form. Editing and blank new filters happen in the popup. */
-function filterFormCard(ctx, v, messages) {
-  const from = CardService.newCardSection().setHeader('From any of these' + (ctx.senders.length ? ' · ' + ctx.senders.length : ''));
-  if (ctx.senders.length) {
-    const chips = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
-    ctx.senders.forEach((s, i) => {
-      chips.addChip(
-        CardService.newChip()
-          .setLabel((isDomainSender(s) ? s.slice(1) : s) + '  ✕')
-          .setIcon(icon(isDomainSender(s) ? 'domain' : 'person'))
-          .setOnClickAction(formAction('onRemoveSender', ctx, { index: String(i) }))
-      );
-    });
-    from.addWidget(chips);
-  } else {
-    from.addWidget(CardService.newTextParagraph().setText('<font color="#444746">No senders yet: matches email from anyone.</font>'));
-  }
-
-  const suggestions = ctx.suggestions.filter((x) => ctx.senders.indexOf(x.value) === -1);
-  if (suggestions.length) {
-    const chips = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
-    suggestions.forEach((x) => {
-      chips.addChip(
-        CardService.newChip().setLabel(x.label).setIcon(icon('domain'))
-          .setOnClickAction(formAction('onSuggestSender', ctx, { value: x.value, replace: x.replace }))
-      );
-    });
-    from.addWidget(chips);
-  }
-
-  // No Add button: the field adds what's typed when you press Enter or leave it. The hints sit in its own small hint text.
-  from.addWidget(
-    CardService.newTextInput()
-      .setFieldName('add')
-      .setTitle(ctx.senders.length ? 'Add more' : 'Add address or domain')
-      .setValue(v.add || '')
-      .setHint(ADD_HINT)
-      .setOnChangeAction(formAction('onAddSenders', ctx))
-  );
-  messages.forEach((m) => {
-    const color = /^Skipped/.test(m) ? '#444746' : '#b3261e';
-    from.addWidget(CardService.newTextParagraph().setText('<font color="' + color + '">' + escapeHtml(m) + '</font>'));
+  return quickCard({
+    address: address,
+    domain: domain,
+    name: (from.split('<')[0] || '').replace(/"/g, '').trim() || address,
+    subject: msg.getSubject() || '',
+    mode: domain && FREE_MAIL.indexOf(domain) === -1 ? 'domain' : 'address',
+    added: null,
   });
-
-  const subject = CardService.newTextInput().setFieldName('subject').setTitle('And the subject contains')
-    .setValue(v.subject || '').setHint('Leave empty to match any subject');
-  if (ctx.subjectSuggestion) subject.setSuggestions(CardService.newSuggestions().addSuggestion(ctx.subjectSuggestion));
-
-  const labels = CardService.newSuggestions();
-  userLabels().forEach((l) => labels.addSuggestion(l.name));
-  const checks = CardService.newSelectionInput().setType(CardService.SelectionInputType.CHECK_BOX).setFieldName('actions');
-  Object.keys(ACTIONS).forEach((key) => checks.addItem(ACTIONS[key].title, key, (v.actions || []).indexOf(key) !== -1));
-  const then = CardService.newCardSection()
-    .setHeader('Then')
-    .addWidget(
-      CardService.newTextInput().setFieldName('label').setTitle('Apply label').setValue(v.label || '')
-        .setHint('Pick one or type a new name').setSuggestions(labels)
-    )
-    .addWidget(checks);
-
-  // Short labels keep both footer buttons on one row in the narrow panel.
-  const footer = CardService.newFixedFooter()
-    .setPrimaryButton(filledButton('Create', formAction('onSaveFilter', ctx)))
-    .setSecondaryButton(overlayButton('Expand', popupUrl({ view: 'new', from: ctx.senders.join(',') })));
-
-  return CardService.newCardBuilder()
-    .setHeader(CardService.newCardHeader().setTitle('Create a filter').setSubtitle(ctx.subtitle))
-    .addSection(from)
-    .addSection(CardService.newCardSection().addWidget(subject))
-    .addSection(then)
-    .setFixedFooter(footer)
-    .build();
 }
 
-function formAction(fn, ctx, extra) {
+const quickSender = (ctx) => (ctx.mode === 'domain' ? '@' + ctx.domain : ctx.address);
+const inDomain = (address, d) => senderDomain(address) === d || senderDomain(address).endsWith('.' + d);
+
+/** Does any sender in the list match this address? A domain covers its subdomains, as in Gmail. */
+function sendersCover(senders, address) {
+  return senders.some((s) => (isDomainSender(s) ? inDomain(address, s.slice(1)) : s === address));
+}
+
+/** Filters already catching this email, and filters it could be added to (ranked). */
+function quickGroups(ctx) {
+  const covered = [];
+  const candidates = [];
+  listFilters().forEach((f) => {
+    const c = f.criteria || {};
+    const senders = sendersFromCriteria(c.from);
+    // Only filters with a sender list can take a new sender: adding one to a subject-only filter would narrow it.
+    if (!senders || senders.length === 0) return;
+    const terms = subjectTerms(c.subject);
+    const subjectOk = !c.subject || (terms && terms.some((t) => t.split(/\s+/).every((w) => ctx.subject.toLowerCase().indexOf(w.toLowerCase()) !== -1)));
+    const otherCriteria = c.to || c.query || c.negatedQuery || c.hasAttachment || c.size;
+    if (sendersCover(senders, ctx.address) && subjectOk && !otherCriteria) covered.push(f);
+    else if (!sendersCover(senders, ctx.address)) {
+      const sameDomain = senders.some((s) => (isDomainSender(s) ? ctx.domain.endsWith(s.slice(1)) : senderDomain(s) === ctx.domain));
+      candidates.push({ f: f, score: (sameDomain ? 1000 : 0) + senders.length, sameDomain: sameDomain, count: senders.length });
+    }
+  });
+  candidates.sort((a, b) => b.score - a.score);
+  return { covered: covered, candidates: candidates };
+}
+
+function quickCard(ctx, note) {
+  const names = labelNames();
+  const g = quickGroups(ctx);
+  const title = (f) => summarizeFilter(f, names).title;
+  const card = CardService.newCardBuilder().setHeader(
+    CardService.newCardHeader()
+      .setTitle(g.covered.length ? 'This sender is already filtered' : 'Add this sender to a filter')
+      .setSubtitle(ctx.name + ' · ' + ctx.address)
+  );
+
+  if (g.covered.length) {
+    const s = CardService.newCardSection().setHeader('Matched by');
+    g.covered.forEach((f) =>
+      s.addWidget(
+        CardService.newDecoratedText().setStartIcon(icon(filterIcon(f))).setText(escapeHtml(title(f)))
+          .setBottomLabel(escapeHtml(summarizeFilter(f, names).subtitle)).setWrapText(true)
+          .setButton(overlayButton('Open', popupUrl({ view: 'edit', id: f.id })))
+      )
+    );
+    card.addSection(s);
+  }
+
+  const what = CardService.newChipList().setLayout(CardService.ChipListLayout.WRAPPED);
+  [['address', 'This address', 'person'], ['domain', 'Anyone at ' + ctx.domain, 'domain']].forEach(([mode, text, ic]) => {
+    if (mode === 'domain' && !ctx.domain) return;
+    what.addChip(
+      CardService.newChip().setLabel((ctx.mode === mode ? '✓ ' : '') + text).setIcon(icon(ic))
+        .setOnClickAction(quickAction('onQuickMode', ctx, { mode: mode }))
+    );
+  });
+  card.addSection(CardService.newCardSection().setHeader('What to add').addWidget(what));
+
+  const sugg = CardService.newCardSection().setHeader(g.covered.length ? 'Add it to another filter' : 'Suggested filters');
+  g.candidates.slice(0, 3).forEach((x) => {
+    const justAdded = ctx.added && ctx.added.id === x.f.id;
+    sugg.addWidget(
+      CardService.newDecoratedText().setStartIcon(icon(filterIcon(x.f))).setText(escapeHtml(title(x.f)))
+        .setBottomLabel(x.sameDomain ? 'Already has a sender at ' + ctx.domain : 'Has ' + x.count + (x.count === 1 ? ' sender' : ' senders'))
+        .setWrapText(true)
+        .setButton(
+          justAdded
+            ? CardService.newTextButton().setText('Undo').setOnClickAction(quickAction('onQuickUndo', ctx))
+            : CardService.newTextButton().setText('Add').setOnClickAction(quickAction('onQuickAdd', ctx, { id: x.f.id }))
+        )
+    );
+  });
+  if (ctx.added && !g.candidates.slice(0, 3).some((x) => x.f.id === ctx.added.id)) {
+    // The filter just added to now covers this sender, so it left the suggestions: keep Undo reachable.
+    sugg.addWidget(
+      CardService.newDecoratedText().setStartIcon(icon('check_circle')).setText('Added to ' + escapeHtml(ctx.added.title))
+        .setButton(CardService.newTextButton().setText('Undo').setOnClickAction(quickAction('onQuickUndo', ctx)))
+    );
+  }
+  if (g.candidates.length > 3) {
+    const other = CardService.newSelectionInput().setType(CardService.SelectionInputType.DROPDOWN).setFieldName('other').setTitle('Another filter');
+    g.candidates.slice(3).forEach((x, i) => other.addItem(title(x.f), x.f.id, i === 0));
+    sugg.addWidget(other).addWidget(CardService.newTextButton().setText('Add').setOnClickAction(quickAction('onQuickAddOther', ctx)));
+  }
+  if (!g.candidates.length) sugg.addWidget(CardService.newTextParagraph().setText('<font color="#444746">No other filter takes a sender list yet. Create a new one below.</font>'));
+  card.addSection(sugg);
+
+  card.setFixedFooter(
+    CardService.newFixedFooter()
+      .setPrimaryButton(overlayButton('New filter', popupUrl({ view: 'new', from: quickSender(ctx), subject: ctx.subject }), true))
+      .setSecondaryButton(overlayButton('All filters', popupUrl({})))
+  );
+  const nav = CardService.newNavigation().updateCard(card.build());
+  const res = CardService.newActionResponseBuilder().setNavigation(nav);
+  if (note) res.setNotification(CardService.newNotification().setText(note));
+  return note === undefined ? card.build() : res.build();
+}
+
+function quickAction(fn, ctx, extra) {
   return CardService.newAction().setFunctionName(fn).setParameters(Object.assign({ ctx: JSON.stringify(ctx) }, extra || {}));
 }
 
-/** Reads the form back. Empty inputs are left out of formInputs, so a missing field means it's empty. */
-function readForm(e) {
-  const inputs = e.commonEventObject.formInputs || {};
-  const value = (name) => ((inputs[name] ? inputs[name].stringInputs.value : [])[0] || '').trim();
-  return { subject: value('subject'), label: value('label'), add: value('add'), actions: inputs.actions ? inputs.actions.stringInputs.value : [] };
-}
-
-function redraw(ctx, v, messages) {
-  return CardService.newActionResponseBuilder()
-    .setNavigation(CardService.newNavigation().updateCard(filterFormCard(ctx, v, messages)))
-    .build();
-}
-
-function onAddSenders(e) {
-  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
-  const v = readForm(e);
-  if (!v.add) return redraw(ctx, v, []); // leaving an empty field isn't an error
-  const r = parseSenders(v.add, ctx.senders);
-  ctx.senders = ctx.senders.concat(r.added);
-  v.add = r.bad.join(', '); // only what needs fixing stays in the field
-  return redraw(ctx, v, r.messages);
-}
-
-function onRemoveSender(e) {
+function onQuickMode(e) {
   const p = e.commonEventObject.parameters;
   const ctx = JSON.parse(p.ctx);
-  ctx.senders.splice(Number(p.index), 1);
-  return redraw(ctx, readForm(e), []);
+  ctx.mode = p.mode;
+  return quickCard(ctx, null);
 }
 
-function onSuggestSender(e) {
-  const p = e.commonEventObject.parameters;
-  const ctx = JSON.parse(p.ctx);
-  // Widening to a domain replaces the address it came from and any other address at that domain.
-  ctx.senders = ctx.senders.filter((s) => s !== p.replace && !(isDomainSender(p.value) && senderDomain(s) === p.value.slice(1)));
-  if (ctx.senders.indexOf(p.value) === -1) ctx.senders.push(p.value);
-  return redraw(ctx, readForm(e), []);
-}
-
-function onSaveFilter(e) {
-  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
-  const v = readForm(e);
-  if (v.add) {
-    // Text typed but not added yet: add it, or show why not.
-    const r = parseSenders(v.add, ctx.senders);
-    ctx.senders = ctx.senders.concat(r.added);
-    v.add = r.bad.join(', ');
-    if (r.bad.length) return redraw(ctx, v, r.messages);
-  }
+function quickAddTo(ctx, id) {
+  const f = getFilter(id);
+  if (!f) return quickCard(ctx, 'This filter no longer exists.');
+  const senders = sendersFromCriteria((f.criteria || {}).from);
+  if (!senders) return quickCard(ctx, "This filter's sender rule uses search syntax. Edit it in the popup.");
+  const add = quickSender(ctx);
+  // Adding a domain makes addresses at that domain redundant; they're dropped so the list stays clean.
+  const next = senders.filter((s) => !(isDomainSender(add) && !isDomainSender(s) && inDomain(s, add.slice(1)))).concat([add]);
   try {
-    return notify(saveFilter(null, { senders: ctx.senders, subject: v.subject, label: v.label, actions: v.actions }));
+    const r = saveFilter(id, { senders: next });
+    const t = summarizeFilter(f, labelNames()).title;
+    ctx.added = { id: r.id, title: t, prevFrom: f.criteria.from };
+    return quickCard(ctx, 'Added ' + senderLabel(add) + ' to ' + t + '. It applies to new email.');
   } catch (err) {
-    return notify(err.message);
+    return quickCard(ctx, err.message);
+  }
+}
+
+function onQuickAdd(e) {
+  const p = e.commonEventObject.parameters;
+  return quickAddTo(JSON.parse(p.ctx), p.id);
+}
+
+function onQuickAddOther(e) {
+  const inputs = e.commonEventObject.formInputs || {};
+  const id = inputs.other ? inputs.other.stringInputs.value[0] : '';
+  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
+  return id ? quickAddTo(ctx, id) : quickCard(ctx, 'Pick a filter first.');
+}
+
+function onQuickUndo(e) {
+  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
+  try {
+    saveFilter(ctx.added.id, { from: ctx.added.prevFrom });
+    ctx.added = null;
+    return quickCard(ctx, 'Undone. The filter is back to how it was.');
+  } catch (err) {
+    return quickCard(ctx, err.message);
   }
 }
 
 /**
  * Creates a filter, or replaces filter `id` (Gmail can't update filters in place).
- * spec.senders (an array), when given, becomes the From criterion.
+ * spec.senders / spec.subjectTerms (arrays), when given, become the From / Subject criteria.
+ * A spec without `label` keeps the filter's current label. Returns {message, id} of the saved filter.
  * The new version is created before the old one is deleted, so a failure never loses a filter.
  * Throws an Error whose message is safe to show the user.
  */
@@ -191,30 +217,37 @@ function saveFilter(id, spec) {
     spec.from = sendersToFrom(spec.senders, base.criteria && base.criteria.from);
     delete spec.senders;
   }
+  if (Array.isArray(spec.subjectTerms)) {
+    spec.subject = termsToSubject(spec.subjectTerms, base.criteria && base.criteria.subject);
+    delete spec.subjectTerms;
+  }
+  // No label in the spec means "leave the label alone" (quick add only changes senders).
+  const keptLabelId = spec.label === undefined ? ((base.action && base.action.addLabelIds) || []).find(isUserLabel) || null : undefined;
 
   // Check with a placeholder label first, so an invalid or duplicate filter never creates a new label.
   const label = spec.label ? findLabel(spec.label) : null;
-  const draft = applyEdits(base, spec, spec.label ? (label ? label.id : 'Label_new') : null);
+  const draft = applyEdits(base, spec, keptLabelId !== undefined ? keptLabelId : spec.label ? (label ? label.id : 'Label_new') : null);
   const problem = filterError(draft);
   if (problem) throw new Error(problem);
-  if (id && sameFilter(base, draft)) return 'Nothing changed.';
+  if (id && sameFilter(base, draft)) return { message: 'Nothing changed.', id: id };
   if ((!spec.label || label) && existing.some((f) => f.id !== id && sameFilter(f, draft))) {
     throw new Error('You already have this exact filter.');
   }
 
+  let created;
   try {
-    const labelId = spec.label ? (label || createLabel(spec.label)).id : null;
-    Gmail.Users.Settings.Filters.create(applyEdits(base, spec, labelId), 'me');
+    const labelId = keptLabelId !== undefined ? keptLabelId : spec.label ? (label || createLabel(spec.label)).id : null;
+    created = Gmail.Users.Settings.Filters.create(applyEdits(base, spec, labelId), 'me');
   } catch (err) {
     throw new Error("Gmail didn't accept this filter: " + err.message);
   }
-  if (!id) return 'Filter created. It applies to new email.';
+  if (!id) return { message: 'Filter created. It applies to new email.', id: created.id };
   try {
     Gmail.Users.Settings.Filters.remove('me', id);
   } catch (err) {
     throw new Error('The new version is saved, but the old one could not be removed. Delete the old one by hand.');
   }
-  return 'Filter updated.';
+  return { message: 'Filter updated.', id: created.id };
 }
 
 /** The parts of a filter the forms don't edit, in words. They're kept as they are on save. */
@@ -418,7 +451,7 @@ function doGet() {
 
 /** The sender parsing code, sent to the popup page so the tag input there works instantly with the same rules. */
 function sharedSource() {
-  return [parseAddress, senderDomain, splitAlternatives, isDomainSender, senderLabel, normalizeSender, parseSenders]
+  return [parseAddress, senderDomain, splitAlternatives, isDomainSender, senderLabel, normalizeSender, parseSenders, subjectTerms]
     .map(String)
     .join('\n');
 }
@@ -446,7 +479,8 @@ function managerData() {
         icon: filterIcon(f),
         summary: summarizeFilter(f, names),
         senders: senders,
-        criteria: filterCriteria(f).filter((x) => !(x.name === 'From' && senders)),
+        subjectTerms: subjectTerms((f.criteria || {}).subject),
+        criteria: filterCriteria(f).filter((x) => !(x.name === 'From' && senders) && !(x.name === 'Subject' && subjectTerms((f.criteria || {}).subject))),
         values: formValues(f, names),
         kept: keptParts(f, names),
       };
@@ -455,7 +489,7 @@ function managerData() {
 }
 
 function managerSave(id, spec) {
-  return saveFilter(id || null, spec);
+  return saveFilter(id || null, spec).message;
 }
 
 function managerDelete(id) {

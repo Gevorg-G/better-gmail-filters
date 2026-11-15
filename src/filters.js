@@ -90,6 +90,39 @@ function sendersToFrom(senders, originalFrom) {
   return same ? originalFrom || '' : senders.map((s) => (isDomainSender(s) ? s.slice(1) : s)).join(' | ');
 }
 
+// ---------- Subject: OR terms ----------
+// Gmail binds OR tighter than the implied AND between words, so "(Payment Receipt OR billing)" means
+// Payment AND (Receipt OR billing). Multi-word terms are therefore written as quoted phrases.
+
+/** "(receipt OR "Payment Receipt" | billing)" -> ["receipt", "Payment Receipt", "billing"]; null for syntax tags can't show. */
+function subjectTerms(subject) {
+  const s = String(subject || '').trim();
+  if (!s) return [];
+  const inner = s.replace(/^\(\s*([\s\S]*?)\s*\)$/, '$1');
+  const parts = inner.split(/\s+OR\s+|\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 1 && inner === s) return [s]; // a single condition is kept exactly as written
+  const terms = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const quoted = /^"([^"]+)"$/.exec(p);
+    if (quoted) terms.push(quoted[1]);
+    else if (/^[^\s"(){}]+$/.test(p) && p.charAt(0) !== '-') terms.push(p);
+    else return null; // e.g. an unquoted multi-word term inside OR: its meaning is ambiguous, so it stays text
+  }
+  return terms;
+}
+
+/** OR terms back to Gmail's subject text. An unchanged set keeps the original text. */
+function termsToSubject(terms, originalSubject) {
+  const before = subjectTerms(originalSubject || '');
+  const key = (t) => t.toLowerCase();
+  const same = before && before.length === terms.length && terms.every((t) => before.map(key).indexOf(key(t)) !== -1);
+  if (same) return originalSubject || '';
+  if (terms.length === 0) return '';
+  if (terms.length === 1) return terms[0];
+  return '(' + terms.map((t) => (/\s/.test(t) ? '"' + t + '"' : t)).join(' OR ') + ')';
+}
+
 // Criteria the forms can edit. Anything else on a filter (size, attachments, categories, forwarding,
 // extra labels) is kept as-is, so editing never drops part of a filter the form doesn't show.
 const EDITABLE_CRITERIA = ['from', 'to', 'subject', 'query', 'negatedQuery'];
