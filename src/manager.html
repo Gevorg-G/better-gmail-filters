@@ -301,6 +301,8 @@
     else if (input.id === 'e-label') items = data.labels.map((l) => ({ value: l, text: l, icon: 'label' }));
     else return hideSugg();
     const q = sgQuery(input);
+    // Senders are suggested only while typing: focus returns to this field after every added tag, and an open list would cover the form.
+    if (input.id === 'e-add' && !q) return hideSugg();
     items = items.filter((x) => !q || x.text.toLowerCase().includes(q));
     if (input.id === 'e-label' && items.length === 1 && items[0].text === input.value) items = [];
     sg.input = input; sg.items = items.slice(0, 8); sg.active = -1;
