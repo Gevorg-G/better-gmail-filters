@@ -20,7 +20,7 @@
   "addOns": {
     "common": {
       "name": "Better Gmail Filters",
-      "logoUrl": "https://www.gstatic.com/images/icons/material/system/1x/filter_list_black_48dp.png",
+      "logoUrl": "https://raw.githubusercontent.com/Gevorg-G/better-gmail-filters/main/assets/logo-128.png",
       "homepageTrigger": { "runFunction": "onHomepage" }
     },
     "gmail": {
