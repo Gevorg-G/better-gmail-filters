@@ -94,7 +94,7 @@ test('sendersFromCriteria and sendersToFrom round-trip without rewriting', () =>
   // Same set (any order) keeps Gmail's original text.
   assert.strictEqual(ctx.sendersToFrom(['@wolfram.com', '@wolframcloud.com'], original), original);
   // A change writes the new set.
-  assert.strictEqual(ctx.sendersToFrom(['@wolfram.com', 'a@b.io'], original), 'wolfram.com | a@b.io');
+  assert.strictEqual(ctx.sendersToFrom(['@wolfram.com', 'a@b.io'], original), '*@wolfram.com | a@b.io');
   assert.strictEqual(ctx.sendersToFrom([], original), '');
   // Search syntax the tags can't represent is left for the text field.
   assert.strictEqual(ctx.sendersFromCriteria('-noreply@x.com'), null);
