@@ -1,0 +1,467 @@
+<title>Better Gmail Filters Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: step rail on top, narrative column left, live simulated mailbox right; stacks on phones */
+:root{
+  --bg:#f4f6f3;--surface:#ffffff;--surface-2:#eceff0;--fg:#1a1f1c;--muted:#58625c;--line:#d9dfdb;
+  --accent:#0f783c;--accent-soft:#e2f1e7;--on-accent:#ffffff;--danger:#b3261e;--danger-soft:#fbe9e7;
+  --toast:#23282a;--on-toast:#f1f4f2;--warn-soft:#fdf3d8;--warn:#7a5300;--shade:rgba(20,25,22,.45);
+  --display:"Space Grotesk",system-ui,sans-serif;--body:Inter,system-ui,-apple-system,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111513;--surface:#191e1b;--surface-2:#222825;--fg:#e6ebe8;--muted:#9aa59e;--line:#2f3732;
+  --accent:#5cc58a;--accent-soft:#1d3426;--on-accent:#0b1a11;--danger:#f2b8b5;--danger-soft:#3b1f1d;
+  --toast:#e6ebe8;--on-toast:#191e1b;--warn-soft:#3a2f12;--warn:#f0cf7c;--shade:rgba(0,0,0,.6);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513;--surface:#191e1b;--surface-2:#222825;--fg:#e6ebe8;--muted:#9aa59e;--line:#2f3732;
+  --accent:#5cc58a;--accent-soft:#1d3426;--on-accent:#0b1a11;--danger:#f2b8b5;--danger-soft:#3b1f1d;
+  --toast:#e6ebe8;--on-toast:#191e1b;--warn-soft:#3a2f12;--warn:#f0cf7c;--shade:rgba(0,0,0,.6);color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.55 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+h1{font-size:26px;font-weight:600}
+h2{font-size:19px;font-weight:600}
+h3{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lede{color:var(--muted);max-width:68ch}
+.steps{display:flex;flex-wrap:wrap;gap:6px}
+.steps button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;display:flex;gap:8px;align-items:center}
+.steps button .n{font:600 12px var(--display);color:var(--muted)}
+.steps button[aria-current="step"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.steps button[aria-current="step"] .n{color:var(--on-accent)}
+.main{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}}
+.story{display:flex;flex-direction:column;gap:14px}
+.story ol,.story ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.note{background:var(--surface-2);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--muted)}
+.note code{font-size:12px}
+.tries{display:flex;flex-direction:column;gap:6px}
+.try{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px}
+.try:hover{border-color:var(--accent)}
+.try .ok{color:var(--accent);font-weight:600;min-width:14px}
+.nav{display:flex;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 12px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:500}
+.btn.link{border:0;background:none;color:var(--accent);padding:4px 6px}
+.stage{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.scroller{overflow-x:auto}
+.cap{font-size:12px;color:var(--muted);padding:8px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+/* simulated mail */
+.mail{display:grid;grid-template-columns:150px minmax(0,1fr) auto 46px;min-width:820px;height:600px}
+.mnav{border-right:1px solid var(--line);padding:10px 6px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.mnav button{border:0;background:none;text-align:left;padding:5px 10px;border-radius:999px;display:flex;justify-content:space-between;font-size:13px}
+.mnav button.on{background:var(--accent-soft);font-weight:600}
+.mnav .sep{font-size:11px;color:var(--muted);padding:10px 10px 2px;letter-spacing:.06em;text-transform:uppercase}
+.mlist{overflow:auto;display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;padding:9px 14px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font-size:13px}
+.row:hover{background:var(--surface-2)}
+.row.new{background:var(--accent-soft)}
+.row .who{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .what{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.row .what b{color:var(--fg);font-weight:500}
+.empty{padding:40px 20px;text-align:center;color:var(--muted)}
+.read{padding:16px 20px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+.read .subj{font:600 18px var(--display)}
+.read .from{font-size:13px;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;background:var(--surface-2);border-radius:4px;padding:2px 6px;color:var(--muted)}
+.panel{width:300px;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--surface);position:relative}
+.rail{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:12px;background:var(--surface-2)}
+.ricon{width:30px;height:30px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--surface);color:var(--muted)}
+.ricon.me{color:var(--accent)}
+.ricon.me.open{background:var(--accent);color:var(--on-accent)}
+.ricon.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--accent)}50%{box-shadow:0 0 0 6px transparent}}
+@media (prefers-reduced-motion:reduce){.ricon.pulse{animation:none;outline:2px solid var(--accent)}}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.search{flex:1;max-width:340px;background:var(--surface-2);border-radius:999px;padding:6px 14px;color:var(--muted);font-size:13px}
+/* add-on card (Google card UI look-alike, kept plain) */
+.chead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+.cbody{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1}
+.ctitle{font-weight:600;font-size:14px}
+.csub{font-size:12px;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:12px;color:var(--muted)}
+.field input[type=text]{border:1px solid var(--line);border-radius:4px;padding:7px 8px;background:var(--surface);color:var(--fg);font:inherit;font-size:13px}
+.hint{font-size:11px;color:var(--muted)}
+.checks{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.checks label{display:flex;gap:8px;align-items:center}
+.checks input{accent-color:var(--accent)}
+.frow{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:12px}
+.frow span{min-width:0;overflow-wrap:anywhere}
+.ptoast{margin:10px 12px;background:var(--toast);color:var(--on-toast);border-radius:6px;padding:8px 10px;font-size:12px}
+.stoast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:var(--toast);color:var(--on-toast);border-radius:6px;padding:9px 14px;font-size:13px;max-width:90%;z-index:5}
+.shade{position:absolute;inset:0;background:var(--shade);display:grid;place-items:center;z-index:6;padding:16px}
+.dlg{background:var(--surface);border-radius:10px;width:min(420px,100%);padding:20px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--line)}
+.dlg.warn{border-top:4px solid var(--warn)}
+.scopes{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.scopes li{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px}
+.scopes code{display:block;font-size:11px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.right{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+/* marketplace */
+.badge{align-self:flex-start;font-size:11px;font-weight:600;border-radius:4px;padding:2px 7px;background:var(--warn-soft);color:var(--warn)}
+.appicon{width:44px;height:44px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.appicon.big{width:64px;height:64px;border-radius:14px}
+.appicon.alt{background:var(--surface-2);color:var(--muted)}
+.market{background:var(--surface);border:1px solid var(--line);border-radius:10px;width:min(720px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column}
+.mhead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.mbody{padding:16px;display:flex;flex-direction:column;gap:14px}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.app{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;text-align:left;background:var(--surface)}
+.app:hover{border-color:var(--accent)}
+.app.ours{border-color:var(--accent)}
+.meta{font-size:12px;color:var(--muted)}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.shot{background:var(--surface-2);border-radius:8px;padding:10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.shot i{display:block;height:8px;border-radius:4px;background:var(--line)}
+.acct{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);text-align:left;width:100%}
+.acct:hover{border-color:var(--accent)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:600;font-size:13px}
+/* phone */
+.phonewrap{display:grid;place-items:center;padding:20px;min-height:600px}
+.phone{width:300px;height:600px;border:10px solid var(--fg);border-radius:36px;overflow:hidden;display:flex;flex-direction:column;background:var(--surface);position:relative}
+.pbar{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px}
+.pscroll{flex:1;overflow:auto;display:flex;flex-direction:column}
+.prow{display:flex;flex-direction:column;align-items:flex-start;padding:10px 14px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font-size:13px;width:100%}
+.prow span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.addons{border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <h1>Better Gmail Filters</h1>
+    <p class="lede">A clickable prototype of the add-on: how someone finds it in the Google Workspace Marketplace, installs it, and creates and manages filters in Gmail on desktop and mobile. The mailbox is simulated, and nothing here touches a real account.</p>
+  </header>
+  <nav class="steps" id="steps" aria-label="Journey steps"></nav>
+  <div class="main">
+    <section class="story" id="story" aria-live="polite"></section>
+    <section class="stage" id="stage"></section>
+  </div>
+</div>
+
+<script>
+// ---------- filter logic (same as src/filters.js) ----------
+const MAX_FILTERS=1000, MAX_CRITERIA_CHARS=1500;
+const ACTIONS={skipInbox:{title:'Skip the inbox',remove:'INBOX'},markRead:{title:'Mark as read',remove:'UNREAD'},star:{title:'Star it',add:'STARRED'},neverSpam:{title:'Never send to spam',remove:'SPAM'}};
+const parseAddress=f=>{const m=/<([^>]+)>/.exec(f||'');return (m?m[1]:f||'').trim().toLowerCase()};
+const senderDomain=a=>a.split('@')[1]||'';
+const senderName=f=>(f.split('<')[0]||f).trim().replace(/"/g,'')||f;
+function filterError(s){
+  if(!s.from&&!s.subject) return 'Fill in From or Subject so the filter matches something.';
+  if(!s.label&&s.actions.length===0) return 'Pick a label or at least one action.';
+  if(s.from.length+s.subject.length>MAX_CRITERIA_CHARS) return 'The criteria are too long for a Gmail filter. Shorten From or Subject.';
+  return null;
+}
+function buildFilter(s,labelId){
+  const criteria={};if(s.from)criteria.from=s.from;if(s.subject)criteria.subject=s.subject;
+  const add=labelId?[labelId]:[],remove=[];
+  s.actions.forEach(k=>{const a=ACTIONS[k];if(a.add)add.push(a.add);if(a.remove)remove.push(a.remove)});
+  const action={};if(add.length)action.addLabelIds=add;if(remove.length)action.removeLabelIds=remove;
+  return {criteria,action};
+}
+const canon=v=>Array.isArray(v)?v.map(canon).sort():v&&typeof v==='object'?Object.keys(v).sort().reduce((o,k)=>(o[k]=canon(v[k]),o),{}):v;
+const sameFilter=(a,b)=>JSON.stringify(canon({c:a.criteria||{},a:a.action||{}}))===JSON.stringify(canon({c:b.criteria||{},a:b.action||{}}));
+const SYS={'remove:INBOX':'skip inbox','remove:UNREAD':'mark read','add:STARRED':'star','remove:SPAM':'never spam'};
+function describeFilter(f){
+  const c=f.criteria||{},a=f.action||{},w=[],t=[];
+  if(c.from)w.push('From: '+c.from);if(c.subject)w.push('Subject: '+c.subject);
+  (a.addLabelIds||[]).forEach(id=>t.push(SYS['add:'+id]||'label '+labelName(id)));
+  (a.removeLabelIds||[]).forEach(id=>t.push(SYS['remove:'+id]||'remove '+labelName(id)));
+  return (w.join(', ')||'Any email')+' → '+(t.join(', ')||'no action');
+}
+function matches(f,e){
+  const c=f.criteria,addr=parseAddress(e.from);
+  if(c.from&&!(c.from.startsWith('@')?addr.endsWith(c.from):addr.includes(c.from.toLowerCase())))return false;
+  if(c.subject&&!e.subject.toLowerCase().includes(c.subject.toLowerCase()))return false;
+  return true;
+}
+
+// ---------- state ----------
+const STEPS=[
+  {id:'discover',name:'Discover'},{id:'install',name:'Install'},{id:'first-run',name:'First run'},
+  {id:'create',name:'Create a filter'},{id:'manage',name:'Manage filters'},{id:'mobile',name:'On mobile'}];
+let uid=100;
+const S={
+  step:'discover',installed:false,mk:null,
+  panelOpen:false,view:'INBOX',openId:null,confirmId:null,page:0,atLimit:false,
+  form:null,ptoast:null,stoast:null,mobile:'inbox',tried:new Set(),poolI:0,
+  labels:[{id:'L1',name:'Receipts'},{id:'L2',name:'Work'}],
+  filters:[
+    {id:'f1',criteria:{from:'alerts@bank.example'},action:{addLabelIds:['L1']}},
+    {id:'f2',criteria:{subject:'standup'},action:{addLabelIds:['L2'],removeLabelIds:['INBOX']}}],
+  emails:[
+    {id:'e1',from:'The Weekly Brief <news@weeklybrief.io>',subject:'Five reads for your Sunday',snippet:'This week: why calendars fail, a quiet case for email…',labels:['INBOX','UNREAD']},
+    {id:'e2',from:'Build bot <ci@buildbot.dev>',subject:'Build #4182 passed on main',snippet:'All 312 checks passed in 6m 41s.',labels:['INBOX','UNREAD']},
+    {id:'e3',from:'Cloudhost Billing <billing@cloudhost.example>',subject:'Invoice INV-2291 for October',snippet:'Your invoice for €48.00 is attached.',labels:['INBOX']},
+    {id:'e6',from:'Bank alerts <alerts@bank.example>',subject:'Your statement is ready',snippet:'Your October statement is available to view.',labels:['INBOX','L1']},
+    {id:'e5',from:'Team calendar <calendar@acme.example>',subject:'Standup moved to 10:30',snippet:'Tomorrow only. Same room.',labels:['L2']},
+    {id:'e4',from:'Mara Lindqvist <mara@studio-north.example>',subject:'Draft contract for review',snippet:'Hi! Attached is the draft we talked about on Friday.',labels:['SPAM']}]
+};
+const POOL=[
+  {from:'The Weekly Brief <news@weeklybrief.io>',subject:'Your Wednesday edition',snippet:'Three links and one long read.'},
+  {from:'Build bot <ci@buildbot.dev>',subject:'Build #4183 failed on feature/filters',snippet:'1 of 312 checks failed.'},
+  {from:'Mara Lindqvist <mara@studio-north.example>',subject:'Signed contract',snippet:'All signed, thanks!',spam:true},
+  {from:'Cloudhost Billing <billing@cloudhost.example>',subject:'Invoice INV-2340 for November',snippet:'Your invoice for €48.00 is attached.'}];
+const labelName=id=>(S.labels.find(l=>l.id===id)||{}).name||id;
+const findLabel=n=>S.labels.find(l=>l.name.toLowerCase()===n.toLowerCase());
+const email=id=>S.emails.find(e=>e.id===id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ICON='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/></svg>';
+
+function openEmail(id){
+  S.openId=id;S.confirmId=null;S.ptoast=null;
+  const e=email(id);if(!e)return;
+  e.labels=e.labels.filter(l=>l!=='UNREAD');
+  S.form={from:parseAddress(e.from),subject:'',label:'',actions:[]};
+}
+
+// ---------- journey copy ----------
+const STORY={
+ discover:()=>`
+  <h2>Find it in the Marketplace</h2>
+  <p>There are two ways in, and both lead to the same listing:</p>
+  <ul><li>In Gmail, click <b>+</b> (Get add-ons) at the bottom of the right-hand side panel, then search.</li><li>On the Google Workspace Marketplace website, search for “gmail filters”.</li></ul>
+  <div class="tries"><button class="try" data-act="mk-open"><span>Click + in Gmail's side panel</span><span class="ok"></span></button></div>
+  <div class="note">The listing's name, short description, and screenshots decide whether people click. Search results show only the icon, name, and one line.</div>`,
+ install:()=>`
+  <h2>Install from the listing</h2>
+  <ol><li>On the listing, click <b>Install</b>.</li><li>Confirm on the “Prepare to install” screen.</li><li>Choose the Google account.</li><li>Review the four permissions and click <b>Allow</b>.</li><li>Click <b>Done</b>. The add-on is now in Gmail on the web and in the Gmail app.</li></ol>
+  <div class="note">Permission is granted once, during install, so there's no extra authorization step the first time you open the add-on. There's no “unverified app” warning either: a public listing that uses the filters scope must pass Google's OAuth verification and a yearly security assessment first.</div>`,
+ 'first-run':()=>`
+  <h2>It's in Gmail now</h2>
+  <ol><li>A filter icon appears in the right-hand side panel. If Gmail was already open, reload it.</li><li>Click the icon. With no email open, you see your existing filters.</li><li>Open any email, and the panel switches to a filter form filled in from that email.</li></ol>
+  <div class="note">The add-on asks for exactly four scopes, listed in the manifest. It never asks for full mailbox access or for outside requests.</div>`,
+ create:()=>`
+  <h2>Create a filter from an email</h2>
+  <p>Open any email and the panel shows a filter form filled in from it. Each scenario below fills the form for you; then click <b>Create filter</b>.</p>
+  <div class="tries">${tries([['newsletter','Filter one sender'],['domain','Filter a whole domain'],['subject','Filter by subject'],['spam','Rescue a sender from Spam'],['duplicate','Create a duplicate'],['empty','Submit an empty form'],['limit',(S.atLimit?'Turn off':'Turn on')+' the 1,000 limit']])}</div>
+  <div class="note">Filters only act on email that arrives after you create them, just like in Gmail. Click <b>Simulate new email</b> above the mailbox to see where the next one lands.</div>`,
+ manage:()=>`
+  <h2>See and delete filters</h2>
+  <p>When no email is open, the panel shows your filters in plain language. Deleting one asks you to confirm first.</p>
+  <div class="tries">${tries([['delete','Delete a filter'],['paging','Load 45 sample filters']])}</div>
+  <div class="note">Each page shows 20 filters, which keeps the card well under Google's limit of 100 widgets per section.</div>`,
+ mobile:()=>`
+  <h2>Same card in the Gmail app</h2>
+  <ol><li>Install once on the web. The add-on then shows up in the Gmail app on its own; there's no separate install from the phone.</li><li>Open an email in the app and scroll to the bottom: add-ons show as icons there.</li><li>Tap the filter icon. The same card opens full screen.</li></ol>
+  <div class="note">There's nothing to build separately for mobile. The app draws the same cards from the same code.</div>`
+};
+function tries(list){return list.map(([k,t])=>`<button class="try" data-act="try" data-k="${k}"><span>${t}</span><span class="ok">${S.tried.has(k)?'✓':''}</span></button>`).join('')}
+
+// ---------- add-on cards ----------
+function cardHTML(){
+  if(S.confirmId){const f=S.filters.find(x=>x.id===S.confirmId);return `<div class="cbody"><div class="ctitle">Delete this filter?</div><p style="font-size:13px">${esc(describeFilter(f))}</p><div style="display:flex;gap:8px"><button class="btn primary" data-act="confirm-del">Delete</button><button class="btn link" data-act="cancel-del">Cancel</button></div></div>`}
+  const e=S.openId&&email(S.openId);
+  if(e){
+    const a=parseAddress(e.from),d=senderDomain(a),F=S.form;
+    return `<div class="cbody">
+      <div><div class="ctitle">Create a filter from this email</div></div>
+      <div class="field"><label for="f-from">From</label><input type="text" id="f-from" list="dl-from" value="${esc(F.from)}" data-f="from"><datalist id="dl-from"><option value="${esc(a)}"><option value="@${esc(d)}"></datalist><span class="hint">Use @${esc(d)} to match the whole domain</span></div>
+      <div class="field"><label for="f-subject">Subject contains</label><input type="text" id="f-subject" list="dl-subj" value="${esc(F.subject)}" data-f="subject" placeholder="${esc(e.subject)}"><datalist id="dl-subj"><option value="${esc(e.subject)}"></datalist><span class="hint">Leave empty to match any subject</span></div>
+      <div class="field"><label for="f-label">Apply label</label><input type="text" id="f-label" list="dl-lab" value="${esc(F.label)}" data-f="label" placeholder="Newsletters"><datalist id="dl-lab">${S.labels.map(l=>`<option value="${esc(l.name)}">`).join('')}</datalist><span class="hint">Pick one or type a new name</span></div>
+      <fieldset class="checks" style="border:0;padding:0;margin:0"><legend class="hint" style="padding:0;margin-bottom:4px">Then</legend>
+      ${Object.keys(ACTIONS).map(k=>`<label><input type="checkbox" id="a-${k}" data-a="${k}" ${F.actions.includes(k)?'checked':''}> ${ACTIONS[k].title}</label>`).join('')}</fieldset>
+      <div><button class="btn primary" data-act="create">Create filter</button></div></div>`;
+  }
+  const total=S.atLimit?MAX_FILTERS:S.filters.length,pages=Math.max(1,Math.ceil(S.filters.length/20));
+  S.page=Math.min(S.page,pages-1);
+  const slice=S.filters.slice(S.page*20,S.page*20+20);
+  return `<div class="cbody"><div><div class="ctitle">Your filters</div><div class="csub">${total} of ${MAX_FILTERS}${pages>1?` · page ${S.page+1} of ${pages}`:''}</div></div>
+    <div>${slice.length?slice.map(f=>`<div class="frow"><span>${esc(describeFilter(f))}</span><button class="btn link" data-act="del" data-id="${f.id}">Delete</button></div>`).join(''):'<p class="csub">No filters yet. Open an email to create one.</p>'}</div>
+    ${pages>1?`<div style="display:flex;gap:8px">${S.page>0?'<button class="btn" data-act="page" data-d="-1">Previous</button>':''}${S.page<pages-1?'<button class="btn" data-act="page" data-d="1">Next</button>':''}</div>`:''}</div>`;
+}
+const panelInner=()=>`<div class="chead"><span style="color:var(--accent)">${ICON}</span>Better Gmail Filters</div>${cardHTML()}${S.ptoast?`<div class="ptoast" role="status">${esc(S.ptoast)}</div>`:''}`;
+
+// ---------- scenes ----------
+function visible(){
+  return S.emails.filter(e=>e.labels.includes(S.view));
+}
+function mailHTML(){
+  const cnt=v=>S.emails.filter(e=>e.labels.includes(v)).length;
+  const navBtn=(v,t)=>`<button class="${S.view===v?'on':''}" data-act="view" data-v="${v}"><span>${esc(t)}</span><span>${cnt(v)||''}</span></button>`;
+  const e=S.openId&&email(S.openId);
+  const list=e?`<article class="read"><button class="btn link" style="align-self:flex-start" data-act="close">← Back to ${esc(S.view==='INBOX'?'Inbox':S.view==='SPAM'?'Spam':S.view==='STARRED'?'Starred':labelName(S.view))}</button>
+      <div class="subj">${esc(e.subject)}</div><div class="from">${esc(e.from)}</div>
+      <div class="chips">${e.labels.filter(l=>!['UNREAD'].includes(l)).map(l=>`<span class="chip">${esc(l==='INBOX'?'Inbox':l==='SPAM'?'Spam':l==='STARRED'?'Starred':labelName(l))}</span>`).join('')}</div>
+      <p>${esc(e.snippet)}</p></article>`
+    : (visible().length?visible().map(x=>`<button class="row ${x.isNew?'new':''}" data-act="open" data-id="${x.id}"><span class="who" ${x.labels.includes('UNREAD')?'':'style="font-weight:500"'}>${esc(senderName(x.from))}</span><span class="what"><b>${esc(x.subject)}</b> · ${esc(x.snippet)}</span></button>`).join(''):`<div class="empty">Nothing here.</div>`);
+  const showPanel=S.installed&&S.panelOpen;
+  return `<div class="cap"><span>Gmail on desktop (simulated)</span><button class="btn" data-act="simulate">Simulate new email</button></div>
+  <div class="scroller"><div class="mail">
+    <nav class="mnav" aria-label="Mailboxes">${navBtn('INBOX','Inbox')}${navBtn('STARRED','Starred')}${navBtn('SPAM','Spam')}<div class="sep">Labels</div>${S.labels.map(l=>navBtn(l.id,l.name)).join('')}</nav>
+    <div style="display:flex;flex-direction:column;min-width:0;border-right:${showPanel?'0':'0'}"><div class="topbar"><div class="search">Search mail</div></div><div class="mlist">${list}</div></div>
+    ${showPanel?`<aside class="panel" aria-label="Add-on panel">${panelInner()}</aside>`:'<div></div>'}
+    <div class="rail" aria-label="Side panel">
+      <span class="ricon" aria-hidden="true">●</span><span class="ricon" aria-hidden="true">◆</span>
+      ${S.installed?`<button class="ricon me ${S.panelOpen?'open':''} ${S.step==='first-run'&&!S.panelOpen?'pulse':''}" data-act="toggle" aria-label="Better Gmail Filters" aria-pressed="${S.panelOpen}">${ICON}</button>`:''}
+      <span style="flex:1"></span>
+      <button class="ricon ${S.step==='discover'&&!S.mk?'pulse':''}" style="margin-bottom:12px" data-act="mk-open" aria-label="Get add-ons" title="Get add-ons">+</button>
+    </div>
+  </div></div>`;
+}
+const APPS=[
+  {id:'ours',name:'Better Gmail Filters',line:'Create a filter from the email you\'re reading'},
+  {id:'x1',name:'Inbox Sorter',line:'Move mail into folders with rules'},
+  {id:'x2',name:'Label Helper',line:'Bulk-apply labels to conversations'}];
+const SCOPES=`<ul class="scopes">
+  <li>Run as a Gmail add-on<code>gmail.addons.execute</code></li>
+  <li>See the sender and subject of the email you have open<code>gmail.addons.current.message.metadata</code></li>
+  <li>Manage your basic mail settings, including filters<code>gmail.settings.basic</code></li>
+  <li>See, create and edit your email labels<code>gmail.labels</code></li></ul>`;
+function marketHTML(){
+  if(!S.mk)return '';
+  let title='Google Workspace Marketplace (simplified)',body;
+  if(S.mk==='search') body=`
+    <div class="field"><label for="mk-q">Search apps</label><input type="text" id="mk-q" value="gmail filters" readonly></div>
+    <div class="results">${APPS.map(a=>`<button class="app ${a.id==='ours'?'ours':''}" data-act="mk-app" data-id="${a.id}">
+      <div class="appicon ${a.id==='ours'?'':'alt'}">${a.id==='ours'?ICON:esc(a.name[0])}</div>
+      <div style="font-weight:600">${esc(a.name)}</div><div class="meta">${esc(a.line)}</div><div class="meta">Works with Gmail</div></button>`).join('')}</div>`;
+  else if(S.mk==='listing') body=`
+    ${S.installed?'':'<button class="btn link" style="align-self:flex-start" data-act="mk-back">← Search results</button>'}
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div class="appicon big">${ICON}</div>
+      <div style="flex:1;min-width:180px"><h2>Better Gmail Filters</h2><div class="meta">Works with Gmail · Free · New listing</div></div>
+      ${S.installed?'<span style="color:var(--accent);font-weight:600">Installed ✓</span>':'<button class="btn primary" data-act="mk-install">Install</button>'}</div>
+    <div class="shots">
+      <div class="shot"><b>Create a filter in two taps</b><i style="width:70%"></i><i></i><i style="width:50%"></i><i style="width:35%;background:var(--accent)"></i></div>
+      <div class="shot"><b>See all your filters in plain words</b><i></i><i style="width:80%"></i><i></i><i style="width:60%"></i></div>
+      <div class="shot"><b>Works in the Gmail app</b><i style="width:60%"></i><i></i><i style="width:40%;background:var(--accent)"></i></div></div>
+    <div><h3>Overview</h3><p style="margin-top:6px">Open any email and create a filter from it: match the sender, their whole domain, or the subject, then label it, skip the inbox, mark it read, star it, or keep it out of spam. See and delete your filters without opening Gmail settings.</p></div>
+    <div><h3>Permissions</h3><p class="meta" style="margin-top:6px">Reads the sender and subject of the open email only. Manages filters and labels. Doesn't read your other email and doesn't send data anywhere.</p></div>
+    <p class="meta">Privacy policy · Terms of service · Support</p>`;
+  else if(S.mk==='prepare') body=`
+    <h2>Prepare to install</h2><p>Better Gmail Filters will need your permission to work with Gmail. You'll review exactly what it can access next.</p>
+    <div class="right"><button class="btn" data-act="mk-cancel">Cancel</button><button class="btn primary" data-act="mk-account">Continue</button></div>`;
+  else if(S.mk==='account'){title='Google sign-in (simplified)';body=`
+    <h2>Choose an account</h2><p class="meta">to continue to Better Gmail Filters</p>
+    <button class="acct" data-act="mk-consent"><span class="avatar">Y</span><span><b>You</b><br><span class="meta">you@gmail.com</span></span></button>
+    <button class="acct" data-act="mk-consent"><span class="avatar">W</span><span><b>Work account</b><br><span class="meta">you@company.example</span></span></button>`}
+  else if(S.mk==='consent'){title='Google sign-in (simplified)';body=`
+    <h2>Better Gmail Filters wants access to your Google Account</h2>${SCOPES}
+    <div class="right"><button class="btn" data-act="mk-cancel">Cancel</button><button class="btn primary" data-act="mk-allow">Allow</button></div>`}
+  else body=`
+    <div style="display:flex;gap:12px;align-items:center"><div class="appicon">${ICON}</div><h2>Better Gmail Filters is installed</h2></div>
+    <p>Open it from the right-hand side panel in Gmail. It's also in the Gmail app on your phone now.</p>
+    <div class="right"><button class="btn primary" data-act="mk-done">Done</button></div>`;
+  return `<div class="shade" style="align-items:start;overflow:auto"><div class="market" role="dialog" aria-label="${esc(title)}">
+    <div class="mhead"><span class="badge">${title}</span><button class="btn link" data-act="mk-close" aria-label="Close">✕</button></div>
+    <div class="mbody">${body}</div></div></div>`;
+}
+function phoneHTML(){
+  const e=S.openId&&email(S.openId);let body;
+  if(S.mobile==='card'&&e){
+    body=`<div class="pbar"><button class="btn link" data-act="m-back" aria-label="Back">←</button>Better Gmail Filters</div><div class="pscroll">${cardHTML()}${S.ptoast?`<div class="ptoast" role="status">${esc(S.ptoast)}</div>`:''}</div>`;
+  }else if(S.mobile==='email'&&e){
+    body=`<div class="pbar"><button class="btn link" data-act="m-inbox" aria-label="Back to inbox">←</button></div>
+    <div class="pscroll"><div style="padding:14px;display:flex;flex-direction:column;gap:8px"><div style="font:600 17px var(--display)">${esc(e.subject)}</div><div class="csub">${esc(e.from)}</div><p>${esc(e.snippet)}</p></div></div>
+    <div class="addons"><span>Add-ons</span><button class="ricon me pulse" data-act="m-card" aria-label="Open Better Gmail Filters">${ICON}</button></div>`;
+  }else{
+    body=`<div class="pbar">Inbox</div><div class="pscroll">${S.emails.filter(x=>x.labels.includes('INBOX')).map(x=>`<button class="prow" data-act="m-open" data-id="${x.id}"><span style="font-weight:600">${esc(senderName(x.from))}</span><span>${esc(x.subject)}</span><span class="csub">${esc(x.snippet)}</span></button>`).join('')}</div>`;
+  }
+  return `<div class="cap"><span>Gmail app on a phone (simulated)</span></div><div class="phonewrap"><div class="phone">${body}</div></div>`;
+}
+
+// ---------- render ----------
+function render(){
+  document.getElementById('steps').innerHTML=STEPS.map((s,i)=>`<button data-act="goto" data-s="${s.id}" ${S.step===s.id?'aria-current="step"':''}><span class="n">${i+1}</span>${s.name}</button>`).join('');
+  const i=STEPS.findIndex(s=>s.id===S.step);
+  document.getElementById('story').innerHTML=STORY[S.step]()+`<div class="nav">${i>0?`<button class="btn" data-act="goto" data-s="${STEPS[i-1].id}">← ${STEPS[i-1].name}</button>`:''}${i<STEPS.length-1?`<button class="btn primary" data-act="goto" data-s="${STEPS[i+1].id}">${STEPS[i+1].name} →</button>`:''}</div>`;
+  const scene=S.step==='mobile'?phoneHTML:mailHTML;
+  document.getElementById('stage').innerHTML=scene()+marketHTML()+(S.stoast?`<div class="stoast" role="status">${esc(S.stoast)}</div>`:'');
+}
+let stTimer;
+function stoast(t){S.stoast=t;clearTimeout(stTimer);stTimer=setTimeout(()=>{S.stoast=null;render()},4200)}
+
+function goto(step){
+  S.step=step;S.ptoast=null;S.confirmId=null;S.mk=null;
+  if(step==='discover'){S.panelOpen=false;S.openId=null}
+  if(step==='install'){S.mk='listing';S.panelOpen=false}
+  if(step==='first-run'){S.installed=true;S.openId=null;S.view='INBOX';S.panelOpen=false}
+  if(step==='create'){S.installed=true;S.panelOpen=true;if(!S.openId)openEmail('e1')}
+  if(step==='manage'){S.installed=true;S.panelOpen=true;S.openId=null}
+  if(step==='mobile'){S.installed=true;S.mobile='inbox';S.openId=null}
+  try{history.replaceState(null,'','#'+step)}catch(_){}
+  render();
+}
+
+function createFilter(){
+  const F=S.form,spec={from:F.from.trim(),subject:F.subject.trim(),label:F.label.trim(),actions:[...F.actions]};
+  const err=filterError(spec);if(err){S.ptoast=err;return}
+  if(S.atLimit){S.ptoast='Gmail allows 1000 filters and you have reached it. Delete one from the add-on homepage first.';return}
+  const ex=spec.label&&findLabel(spec.label);
+  if(!spec.label||ex){const f=buildFilter(spec,ex?ex.id:null);if(S.filters.some(x=>sameFilter(x,f))){S.ptoast='You already have this exact filter.';return}}
+  let lab=ex;if(spec.label&&!ex){lab={id:'L'+(++uid),name:spec.label};S.labels.push(lab)}
+  S.filters.push({id:'f'+(++uid),...buildFilter(spec,lab?lab.id:null)});
+  S.ptoast='Filter created. It applies to new email.'+(spec.label&&!ex?` Label “${spec.label}” was created too.`:'');
+}
+
+function simulate(){
+  const p=POOL[S.poolI++%POOL.length];
+  const e={id:'n'+(++uid),from:p.from,subject:p.subject,snippet:p.snippet,labels:p.spam?['SPAM','UNREAD']:['INBOX','UNREAD'],isNew:true};
+  const hit=S.filters.filter(f=>matches(f,e));
+  hit.forEach(f=>{(f.action.removeLabelIds||[]).forEach(l=>e.labels=e.labels.filter(x=>x!==l));(f.action.addLabelIds||[]).forEach(l=>{if(!e.labels.includes(l))e.labels.push(l)})});
+  if(p.spam&&hit.some(f=>(f.action.removeLabelIds||[]).includes('SPAM'))&&!e.labels.includes('INBOX')&&!hit.some(f=>(f.action.removeLabelIds||[]).includes('INBOX')))e.labels.push('INBOX');
+  S.emails.forEach(x=>x.isNew=false);S.emails.unshift(e);
+  const where=[];
+  if(e.labels.includes('INBOX'))where.push('landed in the inbox');else if(e.labels.includes('SPAM'))where.push('went to Spam');else where.push('skipped the inbox');
+  e.labels.filter(l=>/^L/.test(l)).forEach(l=>where.push('labelled '+labelName(l)));
+  if(e.labels.includes('STARRED'))where.push('starred');
+  if(!e.labels.includes('UNREAD'))where.push('marked read');
+  stoast(`New email from ${parseAddress(e.from)}: ${where.join(', ')}.`+(hit.length?'':' No filter matched.'));
+}
+
+const TRY={
+  newsletter:()=>{S.view='INBOX';openEmail('e1');Object.assign(S.form,{label:'Newsletters',actions:['skipInbox']})},
+  domain:()=>{S.view='INBOX';openEmail('e2');Object.assign(S.form,{from:'@buildbot.dev',label:'Builds'})},
+  subject:()=>{S.view='INBOX';openEmail('e3');Object.assign(S.form,{from:'',subject:'Invoice',label:'Receipts',actions:['star']})},
+  spam:()=>{S.view='SPAM';openEmail('e4');Object.assign(S.form,{actions:['neverSpam']})},
+  duplicate:()=>{S.view='INBOX';openEmail('e6');Object.assign(S.form,{label:'Receipts'})},
+  empty:()=>{S.view='INBOX';openEmail('e1');Object.assign(S.form,{from:'',subject:'',label:'',actions:[]})},
+  limit:()=>{S.atLimit=!S.atLimit;S.ptoast=null},
+  delete:()=>{S.openId=null;S.confirmId=S.filters[0]&&S.filters[0].id},
+  paging:()=>{if(!S.paged){S.paged=true;for(let i=1;i<=45;i++)S.filters.push({id:'s'+i,criteria:{from:`sender${i}@example.com`},action:{removeLabelIds:['INBOX']}})}S.openId=null;S.page=0},
+};
+
+document.addEventListener('input',ev=>{const k=ev.target.dataset.f;if(k&&S.form)S.form[k]=ev.target.value});
+document.addEventListener('change',ev=>{const a=ev.target.dataset.a;if(a&&S.form){const s=new Set(S.form.actions);ev.target.checked?s.add(a):s.delete(a);S.form.actions=[...s]}});
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-act]');if(!b)return;const d=b.dataset;
+  switch(d.act){
+    case 'goto':return goto(d.s);
+    case 'mk-open':S.mk='search';break;
+    case 'mk-app':if(d.id==='ours'){S.mk='listing';if(S.step==='discover')return goto('install')}else stoast('That one is only an example listing.');break;
+    case 'mk-back':S.mk='search';break;
+    case 'mk-close':S.mk=null;break;
+    case 'mk-install':S.mk='prepare';break;
+    case 'mk-account':S.mk='account';break;
+    case 'mk-consent':S.mk='consent';break;
+    case 'mk-cancel':S.mk='listing';stoast('Install cancelled. Nothing was changed.');break;
+    case 'mk-allow':S.installed=true;S.mk='done';break;
+    case 'mk-done':return goto('first-run');
+    case 'toggle':S.panelOpen=!S.panelOpen;S.ptoast=null;break;
+    case 'view':S.view=d.v;S.openId=null;S.confirmId=null;S.ptoast=null;break;
+    case 'open':openEmail(d.id);break;
+    case 'close':S.openId=null;S.ptoast=null;break;
+    case 'create':createFilter();break;
+    case 'del':S.confirmId=d.id;S.ptoast=null;break;
+    case 'cancel-del':S.confirmId=null;break;
+    case 'confirm-del':S.filters=S.filters.filter(f=>f.id!==S.confirmId);S.confirmId=null;S.page=0;S.ptoast='Filter deleted.';break;
+    case 'page':S.page+=Number(d.d);break;
+    case 'simulate':simulate();break;
+    case 'try':S.tried.add(d.k);S.installed=true;S.panelOpen=true;S.ptoast=null;S.confirmId=null;TRY[d.k]();break;
+    case 'm-open':openEmail(d.id);S.mobile='email';break;
+    case 'm-card':S.mobile='card';S.ptoast=null;break;
+    case 'm-back':S.mobile='email';S.ptoast=null;break;
+    case 'm-inbox':S.mobile='inbox';S.openId=null;break;
+  }
+  render();
+});
+const start=(location.hash||'').slice(1);
+goto(STEPS.some(s=>s.id===start)?start:'discover');
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h!==S.step&&STEPS.some(s=>s.id===h))goto(h)});
+</script>
