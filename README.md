@@ -21,6 +21,7 @@ All scopes are listed explicitly in the manifest, so Apps Script can't add broad
 | `gmail.addons.current.message.metadata` | Reads the sender and subject of the **open email only**, through its per-message access token. This is the narrowest scope that does that. |
 | `gmail.settings.basic` | Lists, creates and deletes filters (Restricted scope). |
 | `gmail.labels` | Lists labels to suggest them and to name them on the homepage, and creates a label when you type a new one. |
+| `gmail.modify` | Applies a filter to email you already have: searches with the filter's criteria and changes those messages' labels (label, archive, read, star, important). Restricted scope; it can read and change all mail, but never deletes. Only used when you choose to apply a filter. |
 
 The add-on does **not** request these:
 - `https://mail.google.com/`: full mailbox access isn't needed.
@@ -67,6 +68,10 @@ The web app needs a deployment once: `clasp create-deployment --description "Ful
 ## Editing filters
 
 Gmail has no "update" for filters, so saving an edit creates the new version first and deletes the old one only after that succeeds. Parts of a filter the form doesn't show (inbox tabs, extra labels, size or attachment conditions, forwarding) are kept as they are.
+
+## Applying to existing email
+
+Gmail filters only act on new email, so "apply to existing emails" is a separate step, like Gmail's "Also apply filter to matching conversations". It's in three places: after a quick add (**Apply to older emails**), on a filter's details card, and as a checkbox in the popup's create and edit form. It searches with the filter's criteria (spam and trash excluded) and applies the filter's label changes in batches of 1,000. Forwarding is never applied to old email. One run handles the newest 5,000 matches so it stays inside the 30-second limit for card actions; the result says when older ones were left. Undo on a quick add restores the filter but not emails it was already applied to.
 
 ## Testers
 

@@ -125,3 +125,29 @@ test('filterQuery builds the Gmail search a filter matches', () => {
     'from:(a.com | b@c.io) subject:(Invoice) -(spam) has:attachment');
   assert.match(ctx.gmailSearchUrl('from:(x.com)'), /#search\/from%3A\(x\.com\)$/);
 });
+
+test('subjectMatches tells whether a subject rule catches an email', () => {
+  const subj = 'Your receipt from Anthropic, PBC #2461-9668-7871';
+  assert.strictEqual(ctx.subjectMatches('', subj), true);
+  assert.strictEqual(ctx.subjectMatches('(receipt OR invoice OR billing)', subj), true);
+  assert.strictEqual(ctx.subjectMatches('("Payment Receipt" OR billing)', subj), false);
+  assert.strictEqual(ctx.subjectMatches('Receipt', subj), true);
+  assert.strictEqual(ctx.subjectMatches('(a b OR c)', subj), null); // search syntax: can't tell
+});
+
+test("applyEdits without actions (quick add, Undo) keeps the filter's actions", () => {
+  const base = {
+    id: 'f1',
+    criteria: { from: 'a@x.com', subject: 'receipt' },
+    action: { addLabelIds: ['Label_1', 'STARRED', 'IMPORTANT'], removeLabelIds: ['INBOX', 'UNREAD', 'SPAM'] },
+  };
+  const out = ctx.applyEdits(base, { from: 'a@x.com | b.com' }, 'Label_1');
+  assert.strictEqual(out.criteria.from, 'a@x.com | b.com');
+  assert.strictEqual(out.criteria.subject, 'receipt');
+  assert.deepStrictEqual(Array.from(out.action.addLabelIds), ['Label_1', 'STARRED', 'IMPORTANT']);
+  assert.deepStrictEqual(Array.from(out.action.removeLabelIds), ['INBOX', 'UNREAD', 'SPAM']);
+  // With actions given, managed ones follow the list as before.
+  const edited = ctx.applyEdits(base, { actions: [] }, 'Label_1');
+  assert.deepStrictEqual(Array.from(edited.action.addLabelIds), ['Label_1', 'IMPORTANT']);
+  assert.strictEqual(edited.action.removeLabelIds, undefined);
+});

@@ -279,6 +279,7 @@
         '<section class="sect"><h2>Then</h2>' +
           frow('Apply label', 'e-label', '<input type="text" id="e-label" name="label" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sugg" aria-expanded="false" value="' + esc(v.label || '') + '" placeholder="Pick one or type a new name">') +
           frow('Also', '', '<div class="checks">' + data.actions.map((a) => '<label><input type="checkbox" name="actions" value="' + a.key + '"' + ((v.actions || []).includes(a.key) ? ' checked' : '') + '> ' + esc(a.title) + '</label>').join('') + '</div>') +
+          frow('', '', '<label><input type="checkbox" name="applyExisting"' + (v.applyExisting ? ' checked' : '') + '> Also apply to matching emails you already have</label>') +
           (kept.length ? frow('<span class="ms" aria-hidden="true" style="font-size:16px">lock</span> Kept as is', '', '<div class="kept">' + kept.map((k) => '<span class="tag">' + esc(k) + '</span>').join('') + '<span class="sub" style="flex-basis:100%">This form doesn’t edit these, and saving won’t change them.</span></div>') : '') +
         '</section>' +
         (E.error ? '<div class="msg err" role="alert"><span class="ms" aria-hidden="true">error</span><span>' + esc(E.error) + '</span></div>' : '') +
@@ -294,6 +295,7 @@
     ['subject', 'query', 'negatedQuery', 'to', 'label'].forEach((k) => { if (form[k]) v[k] = form[k].value; });
     if (form.from) ui.edit.rawFrom = form.from.value;
     v.actions = [...form.querySelectorAll('input[name=actions]:checked')].map((x) => x.value);
+    v.applyExisting = !!(form.applyExisting && form.applyExisting.checked);
   }
 
   function commitAdd(text) {
@@ -496,7 +498,7 @@
     google.script.run
       .withSuccessHandler((msg) => { toast(msg); ui.view = 'list'; ui.edit = null; load(); })
       .withFailureHandler((e) => { E.saving = false; E.error = e.message.replace(/^Exception: /, '').replace(/^Error: /, ''); renderEdit(); })
-      .managerSave(E.id, spec);
+      .managerSave(E.id, spec, v.applyExisting);
   });
 
   // Opened from the side panel: ?view=edit&id=… or ?view=new&from=a@x.com,@y.com&subject=…

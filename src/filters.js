@@ -112,6 +112,18 @@ function subjectTerms(subject) {
   return terms;
 }
 
+/**
+ * Would a filter's Subject rule catch an email with this subject? true, false, or null when the rule uses search syntax.
+ * shortcut: word-contains check per OR term, not Gmail's exact tokenizer; good enough for a hint.
+ */
+function subjectMatches(filterSubject, emailSubject) {
+  const terms = subjectTerms(filterSubject);
+  if (!terms) return null;
+  if (!terms.length) return true;
+  const s = String(emailSubject || '').toLowerCase();
+  return terms.some((t) => t.toLowerCase().split(/\s+/).every((w) => s.indexOf(w) !== -1));
+}
+
 /** OR terms back to Gmail's subject text. An unchanged set keeps the original text. */
 function termsToSubject(terms, originalSubject) {
   const before = subjectTerms(originalSubject || '');
@@ -153,7 +165,7 @@ const isUserLabel = (id) => /^Label_/.test(id);
 
 /**
  * Applies form values to a filter. base: existing filter ({} to create);
- * spec: {from?, to?, subject?, query?, negatedQuery?, actions: string[]}, where an undefined field is left alone;
+ * spec: {from?, to?, subject?, query?, negatedQuery?, actions?: string[]}, where an undefined field is left alone;
  * labelId: the one editable user label, or null for none.
  */
 function applyEdits(base, spec, labelId) {
@@ -166,12 +178,14 @@ function applyEdits(base, spec, labelId) {
 
   const old = base.action || {};
   const oldUserLabel = (old.addLabelIds || []).find(isUserLabel);
+  // No actions in the spec (quick add, Undo) means keep the filter's actions as they are, like any other field.
+  const keepActions = spec.actions === undefined;
   const add = labelId ? [labelId] : [];
   (old.addLabelIds || []).forEach((id) => {
-    if (id !== oldUserLabel && !MANAGED_ADD.includes(id) && !add.includes(id)) add.push(id);
+    if (id !== oldUserLabel && (keepActions || !MANAGED_ADD.includes(id)) && !add.includes(id)) add.push(id);
   });
-  const remove = (old.removeLabelIds || []).filter((id) => !MANAGED_REMOVE.includes(id));
-  spec.actions.forEach((key) => {
+  const remove = (old.removeLabelIds || []).filter((id) => keepActions || !MANAGED_REMOVE.includes(id));
+  (spec.actions || []).forEach((key) => {
     const a = ACTIONS[key];
     if (a.add && !add.includes(a.add)) add.push(a.add);
     if (a.remove && !remove.includes(a.remove)) remove.push(a.remove);
