@@ -124,6 +124,9 @@ function quickCard(ctx, note) {
         .setButton(CardService.newTextButton().setText('Undo').setOnClickAction(quickAction('onQuickUndo', ctx)))
     );
   }
+  if (ctx.added && !ctx.added.applied) {
+    sugg.addWidget(CardService.newTextButton().setText('Apply to older emails').setOnClickAction(quickAction('onQuickApply', ctx)));
+  }
   if (g.candidates.length > 3) {
     const other = CardService.newSelectionInput().setType(CardService.SelectionInputType.DROPDOWN).setFieldName('other').setTitle('Another filter');
     g.candidates.slice(3).forEach((x, i) => other.addItem(title(x.f), x.f.id, i === 0));
@@ -192,12 +195,24 @@ function onQuickAddOther(e) {
   return id ? quickAddTo(ctx, id) : quickCard(ctx, 'Pick a filter first.');
 }
 
+function onQuickApply(e) {
+  const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
+  try {
+    const msg = applyToExisting(ctx.added.id);
+    ctx.added.applied = true;
+    return quickCard(ctx, msg);
+  } catch (err) {
+    return quickCard(ctx, err.message);
+  }
+}
+
 function onQuickUndo(e) {
   const ctx = JSON.parse(e.commonEventObject.parameters.ctx);
   try {
     saveFilter(ctx.added.id, { from: ctx.added.prevFrom });
+    const applied = ctx.added.applied;
     ctx.added = null;
-    return quickCard(ctx, 'Undone. The filter is back to how it was.');
+    return quickCard(ctx, 'Undone. The filter is back to how it was.' + (applied ? ' Emails it was already applied to keep their changes.' : ''));
   } catch (err) {
     return quickCard(ctx, err.message);
   }
@@ -257,6 +272,46 @@ function saveFilter(id, spec) {
     throw new Error('The new version is saved, but the old one could not be removed. Delete the old one by hand.');
   }
   return { message: 'Filter updated.', id: created.id };
+}
+
+// Card actions time out after 30 seconds; this many messages fits well inside that.
+// shortcut: a bigger match gets only its newest APPLY_LIMIT messages changed (and says so); split it over runs if that's ever needed.
+const APPLY_LIMIT = 5000;
+
+/**
+ * Applies filter `id`'s actions (labels, archive, read, star, important) to the email it already matches,
+ * like Gmail's "Also apply filter to matching conversations". Returns a message for the user.
+ * Throws an Error whose message is safe to show the user.
+ */
+function applyToExisting(id) {
+  const f = getFilter(id);
+  if (!f) throw new Error('This filter no longer exists.');
+  const a = f.action || {};
+  const add = a.addLabelIds || [];
+  const remove = a.removeLabelIds || [];
+  if (!add.length && !remove.length) return "This filter only forwards, and forwarding can't be applied to existing email.";
+  const q = filterQuery(f.criteria);
+  if (!q) throw new Error('This filter has no search criteria to match existing email.');
+
+  const ids = [];
+  let token;
+  try {
+    do {
+      const r = Gmail.Users.Messages.list('me', { q: q, maxResults: 500, pageToken: token });
+      (r.messages || []).forEach((m) => ids.push(m.id));
+      token = r.nextPageToken;
+    } while (token && ids.length < APPLY_LIMIT);
+    for (let i = 0; i < ids.length; i += 1000) {
+      Gmail.Users.Messages.batchModify({ ids: ids.slice(i, i + 1000), addLabelIds: add, removeLabelIds: remove }, 'me');
+    }
+  } catch (err) {
+    throw new Error("Couldn't apply the filter to existing email: " + err.message);
+  }
+  if (!ids.length) return 'No existing email matches this filter.';
+  const n = ids.length.toLocaleString('en-US');
+  return token
+    ? 'Applied to the newest ' + n + ' matching emails. Older ones were left as they are.'
+    : 'Applied to ' + n + (ids.length === 1 ? ' existing email.' : ' existing emails.');
 }
 
 /** The parts of a filter the forms don't edit, in words. They're kept as they are on save. */
@@ -393,8 +448,15 @@ function onOpenFilter(e) {
     .forEach((x) => when.addWidget(decorated(icons[x.name] || 'attach_file', x.name, x.values.map(escapeHtml).join('<br>') || 'Yes')));
 
   when.addWidget(
-    CardService.newTextButton().setText('Show matching emails')
-      .setOpenLink(CardService.newOpenLink().setUrl(gmailSearchUrl(filterQuery(c))).setOpenAs(CardService.OpenAs.FULL_SIZE))
+    CardService.newButtonSet()
+      .addButton(
+        CardService.newTextButton().setText('Show matching emails')
+          .setOpenLink(CardService.newOpenLink().setUrl(gmailSearchUrl(filterQuery(c))).setOpenAs(CardService.OpenAs.FULL_SIZE))
+      )
+      .addButton(
+        CardService.newTextButton().setText('Apply to existing emails')
+          .setOnClickAction(CardService.newAction().setFunctionName('onApplyFilter').setParameters({ id: id }))
+      )
   );
 
   const then = CardService.newCardSection().setHeader('Then');
@@ -417,6 +479,14 @@ function onOpenFilter(e) {
     )
     .build();
   return pushCard(card);
+}
+
+function onApplyFilter(e) {
+  try {
+    return notify(applyToExisting(e.commonEventObject.parameters.id));
+  } catch (err) {
+    return notify(err.message);
+  }
 }
 
 function onDeleteFilter(e) {
@@ -504,8 +574,15 @@ function managerData() {
   };
 }
 
-function managerSave(id, spec) {
-  return saveFilter(id || null, spec).message;
+function managerSave(id, spec, applyExisting) {
+  const r = saveFilter(id || null, spec);
+  if (!applyExisting) return r.message;
+  try {
+    return r.message + ' ' + applyToExisting(r.id);
+  } catch (err) {
+    // The filter is saved either way, so this must not fail the save.
+    return r.message + ' ' + err.message;
+  }
 }
 
 function managerDelete(id) {
