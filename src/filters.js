@@ -112,6 +112,18 @@ function subjectTerms(subject) {
   return terms;
 }
 
+/**
+ * Would a filter's Subject rule catch an email with this subject? true, false, or null when the rule uses search syntax.
+ * shortcut: word-contains check per OR term, not Gmail's exact tokenizer; good enough for a hint.
+ */
+function subjectMatches(filterSubject, emailSubject) {
+  const terms = subjectTerms(filterSubject);
+  if (!terms) return null;
+  if (!terms.length) return true;
+  const s = String(emailSubject || '').toLowerCase();
+  return terms.some((t) => t.toLowerCase().split(/\s+/).every((w) => s.indexOf(w) !== -1));
+}
+
 /** OR terms back to Gmail's subject text. An unchanged set keeps the original text. */
 function termsToSubject(terms, originalSubject) {
   const before = subjectTerms(originalSubject || '');

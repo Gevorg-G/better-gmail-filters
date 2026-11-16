@@ -125,3 +125,12 @@ test('filterQuery builds the Gmail search a filter matches', () => {
     'from:(a.com | b@c.io) subject:(Invoice) -(spam) has:attachment');
   assert.match(ctx.gmailSearchUrl('from:(x.com)'), /#search\/from%3A\(x\.com\)$/);
 });
+
+test('subjectMatches tells whether a subject rule catches an email', () => {
+  const subj = 'Your receipt from Anthropic, PBC #2461-9668-7871';
+  assert.strictEqual(ctx.subjectMatches('', subj), true);
+  assert.strictEqual(ctx.subjectMatches('(receipt OR invoice OR billing)', subj), true);
+  assert.strictEqual(ctx.subjectMatches('("Payment Receipt" OR billing)', subj), false);
+  assert.strictEqual(ctx.subjectMatches('Receipt', subj), true);
+  assert.strictEqual(ctx.subjectMatches('(a b OR c)', subj), null); // search syntax: can't tell
+});

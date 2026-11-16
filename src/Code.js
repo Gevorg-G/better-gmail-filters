@@ -57,13 +57,14 @@ function quickGroups(ctx) {
     const senders = sendersFromCriteria(c.from);
     // Only filters with a sender list can take a new sender: adding one to a subject-only filter would narrow it.
     if (!senders || senders.length === 0) return;
-    const terms = subjectTerms(c.subject);
-    const subjectOk = !c.subject || (terms && terms.some((t) => t.split(/\s+/).every((w) => ctx.subject.toLowerCase().indexOf(w.toLowerCase()) !== -1)));
+    const subject = c.subject ? subjectMatches(c.subject, ctx.subject) : true;
     const otherCriteria = c.to || c.query || c.negatedQuery || c.hasAttachment || c.size;
-    if (sendersCover(senders, ctx.address) && subjectOk && !otherCriteria) covered.push(f);
+    if (sendersCover(senders, ctx.address) && subject && !otherCriteria) covered.push(f);
     else if (!sendersCover(senders, ctx.address)) {
       const sameDomain = senders.some((s) => (isDomainSender(s) ? ctx.domain.endsWith(s.slice(1)) : senderDomain(s) === ctx.domain));
-      candidates.push({ f: f, score: (sameDomain ? 1000 : 0) + senders.length, sameDomain: sameDomain, count: senders.length });
+      // A filter whose subject rule won't catch this email is a weak suggestion, so it sinks below the rest.
+      const score = (sameDomain ? 1000 : 0) + (subject === false ? -500 : 0) + senders.length;
+      candidates.push({ f: f, score: score, sameDomain: sameDomain, count: senders.length, subject: c.subject ? subject : undefined });
     }
   });
   candidates.sort((a, b) => b.score - a.score);
@@ -107,7 +108,7 @@ function quickCard(ctx, note) {
     const justAdded = ctx.added && ctx.added.id === x.f.id;
     sugg.addWidget(
       CardService.newDecoratedText().setStartIcon(icon(filterIcon(x.f))).setText(escapeHtml(title(x.f)))
-        .setBottomLabel(x.sameDomain ? 'Already has a sender at ' + ctx.domain : 'Has ' + x.count + (x.count === 1 ? ' sender' : ' senders'))
+        .setBottomLabel((x.sameDomain ? 'Already has a sender at ' + ctx.domain : 'Has ' + x.count + (x.count === 1 ? ' sender' : ' senders')) + subjectHint(x.subject))
         .setWrapText(true)
         .setButton(
           justAdded
@@ -140,6 +141,14 @@ function quickCard(ctx, note) {
   const res = CardService.newActionResponseBuilder().setNavigation(nav);
   if (note) res.setNotification(CardService.newNotification().setText(note));
   return note === undefined ? card.build() : res.build();
+}
+
+/** Only filters with a Subject rule get a hint; undefined means the filter has none. */
+function subjectHint(subject) {
+  if (subject === true) return ' · its subject rule matches this email';
+  if (subject === false) return " · its subject rule won't catch this email";
+  if (subject === null) return ' · has a subject rule too';
+  return '';
 }
 
 function quickAction(fn, ctx, extra) {
